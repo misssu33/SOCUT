@@ -35,6 +35,9 @@
     safe: false,
     trimStart: 0,
     trimEnd: DEMO_DURATION,
+    // 다중 클립 타임라인 (각 클립: dur, a~b 트림, vol, mute, acw 무음분석, strip 썸네일)
+    clips: [],
+    selClip: 0,
     font: 'sans',
     ls: 0,
     lh: 1.45,
@@ -113,42 +116,6 @@
   const cutChips = $('#cutChips');
   const sceneInfoEl = $('#sceneInfo');
   const btnSceneScan = $('#btnSceneScan');
-  const btnSceneApply = $('#btnSceneApply');
-
-  /* ---------------- source ---------------- */
-  const video = document.createElement('video');
-  video.playsInline = true;
-  video.setAttribute('playsinline', '');
-  video.setAttribute('webkit-playsinline', '');
-  video.preload = 'auto';
-  video.loop = false;
-  video.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
-  document.body.appendChild(video);
-
-  const demoCanvas = document.createElement('canvas');
-  demoCanvas.width = 1280;
-  demoCanvas.height = 720;
-  const dctx = demoCanvas.getContext('2d');
-
-  let mode = 'demo';          // 'demo' | 'video'
-  let demoAbs = 0;
-  let demoPainted = -1;
-  let sourceDur = DEMO_DURATION;
-  let playing = false;
-  // 자막 스타일을 고르면 한 번 자동으로 모션을 보여 준다(멈춘 화면에서는 정지 상태라 차이를 알기 어렵다)
-  const SUB_DEMO_LEN = 1.9;
-  let subDemoT0 = 0;
-  let dirty = true;
-  let lastTs = 0;
-  let audioGraph = null;
-  let objURL = null;
-  let pendingName = '';
-  let srcFile = null;
-  let durProbe = false;
-  let durTimer = 0;
-  let exp = null;
-  let resultURL = null;
-  let toastTimer = 0;
 
   const FILTER_OK = (function () {
     try {
@@ -256,80 +223,199 @@
     return fs;
   }
 
-  /* ---------------- source info ---------------- */
-  function getSource() {
-    if (mode === 'video' && video.videoWidth > 0) {
-      return { el: video, w: video.videoWidth, h: video.videoHeight };
+  /* ---------------- 클립 소스 (다중 클립) ----------------
+     타임라인은 클립 배열(S.clips)이다. 클립마다 트림(a,b)·볼륨·무음분석 결과(c.acw)를
+     따로 갖고, 지금 클립(S.selClip)의 <video> 가 video 전역으로 잡혀 기존 그리기 코드가
+     그대로 돌아간다. 시간 계산은 모두 출력(결과 영상) 시간 기준이다. */
+  const demoCanvas = document.createElement('canvas');
+  demoCanvas.width = 1280;
+  demoCanvas.height = 720;
+  const dctx = demoCanvas.getContext('2d');
+
+  let video = null;          // 지금 클립의 <video> (데모 클립이면 null)
+  let mode = 'demo';         // 'demo' | 'video'
+  let playIdx = 0;           // 지금 재생/편집 중인 클립 번호
+  let demoAbs = 0;
+  let demoPainted = -1;
+  let sourceDur = DEMO_DURATION;
+  let playing = false;
+  let clipSeq = 0;
+  // 자막 스타일을 고르면 한 번 자동으로 모션을 보여 준다(멈춘 화면에서는 정지 상태라 차이를 알기 어렵다)
+  const SUB_DEMO_LEN = 1.9;
+  let subDemoT0 = 0;
+  let dirty = true;
+  let lastTs = 0;
+  let audioGraph = null;
+  let exp = null;
+  let resultURL = null;
+  let toastTimer = 0;
+
+  function clipAt(i) {
+    const n = S.clips.length;
+    if (!n) return null;
+    return S.clips[clamp(Math.round(Number(i) || 0), 0, n - 1)];
+  }
+  function activeClip() { return clipAt(playIdx); }
+  function isVideoClip(c) { return !!c && c.kind === 'video' && !!c.el; }
+
+  function makeDemoClip() {
+    return {
+      id: ++clipSeq, kind: 'demo', name: '샘플 데모', el: null, file: null, url: '',
+      dur: DEMO_DURATION, a: 0, b: DEMO_DURATION, vol: 100, mute: false,
+      acw: [], strip: '', w: 1280, h: 720
+    };
+  }
+
+  function applyPitchToVideo() {
+    const lock = !!S.pitch.lock;
+    S.clips.forEach(function (c) {
+      if (!c.el) return;
+      try { c.el.preservesPitch = lock; } catch (e) { /* noop */ }
+      try { c.el.webkitPreservesPitch = lock; } catch (e) { /* noop */ }
+      try { c.el.mozPreservesPitch = lock; } catch (e) { /* noop */ }
+    });
+  }
+
+  // 클립 i 를 '지금 클립'으로 만든다(재생·편집 공통)
+  function setActive(i, opts) {
+    opts = opts || {};
+    const n = S.clips.length;
+    if (!n) return;
+    i = clamp(Math.round(Number(i) || 0), 0, n - 1);
+    if (i === playIdx && !opts.force) {
+      S.selClip = i;
+      syncTrimState();
+      return;
     }
-    if (mode === 'demo') {
+    const prev = S.clips[playIdx];
+    const c = S.clips[i];
+    if (prev && prev !== c && prev.el) { try { prev.el.pause(); } catch (e) { /* noop */ } }
+    playIdx = i;
+    S.selClip = i;
+    video = c.el || null;
+    mode = c.kind;
+    sourceDur = c.dur || DEMO_DURATION;
+    syncTrimState();
+    applyPitchToVideo();
+    if (!opts.silent) {
+      updateTrimUI();
+      renderClipUI();
+      renderTimeline();
+    }
+    dirty = true;
+  }
+
+  function syncTrimState() {
+    const c = clipAt(S.selClip);
+    if (!c) return;
+    S.trimStart = c.a;
+    S.trimEnd = c.b;
+  }
+
+  function getSource() {
+    const c = activeClip();
+    if (!c) return null;
+    if (c.kind === 'video' && c.el && c.el.videoWidth > 0) {
+      return { el: c.el, w: c.el.videoWidth, h: c.el.videoHeight };
+    }
+    if (c.kind === 'demo') {
       return { el: demoCanvas, w: demoCanvas.width, h: demoCanvas.height };
     }
     return null;
   }
   function srcPos() {
-    return mode === 'video' ? (video.currentTime || 0) : demoAbs;
+    const c = activeClip();
+    if (c && c.kind === 'video' && c.el) return c.el.currentTime || 0;
+    return demoAbs;
+  }
+  function pauseAll() {
+    S.clips.forEach(function (c) { if (c.el) { try { c.el.pause(); } catch (e) { /* noop */ } } });
+  }
+  function seekEl(el, t) {
+    return new Promise(function (resolve) {
+      if (!el) return resolve();
+      let done = false;
+      function fin() {
+        if (done) return;
+        done = true;
+        el.removeEventListener('seeked', fin);
+        resolve();
+      }
+      el.addEventListener('seeked', fin);
+      try { el.currentTime = t; } catch (e) { fin(); }
+      setTimeout(fin, 1500);
+    });
+  }
+  function seekClipSrc(i, p) {
+    const c = clipAt(i);
+    if (!c) return;
+    if (c.kind === 'video' && c.el) {
+      try { c.el.currentTime = clamp(p, 0, Math.max(0.01, c.dur)); } catch (e) { /* noop */ }
+    } else {
+      demoAbs = p;
+    }
+    dirty = true;
   }
 
-  /* ---------------- 무음 자동 컷 ---------------- */
-  let cutRuns = [];          // 무음 구간(소스 시간) — S.autocut.windows 에서 계산
+  /* ---------------- 타임라인 시간 계산 ----------------
+     클립마다 [남길 구간들]을 만들고, 구간마다 속도(램프)를 적분한 표를 쌓는다.
+     표의 누적합이 곧 '결과 영상(출력) 시간'이다. 미리보기·내보내기·컷 분할이 모두
+     이 표를 쓰므로 화면과 녹화가 어긋나지 않는다. */
+  const RAMP_N = 240;
+  let tlCache = { key: '', items: [], cum: [0], total: 0, flat: true };
 
-  function computeCuts() {
+  function clipKey(c) {
+    return c.id + ':' + c.a.toFixed(4) + ':' + c.b.toFixed(4) + ':' + (c.acw ? c.acw.length : 0);
+  }
+
+  // 클립 안에서 지울 무음 구간(소스 시간) — 스위치와 무관하게 분석 결과로 계산한다
+  function silentRuns(c) {
+    const out = [];
+    if (!c || !c.acw || !c.acw.length) return out;
     const a = S.autocut;
-    cutRuns = [];
-    if (!a.windows || !a.windows.length) return;
     const hop = a.hop || 0.02;
     let start = -1;
-    for (let i = 0; i < a.windows.length; i++) {
-      const silent = a.windows[i] < a.thr;
+    for (let i = 0; i < c.acw.length; i++) {
+      const silent = c.acw[i] < a.thr;
       if (silent && start < 0) start = i;
-      const last = i === a.windows.length - 1;
+      const last = i === c.acw.length - 1;
       if (start >= 0 && (!silent || last)) {
         const end = (silent ? i + 1 : i) * hop;
         const s0 = start * hop;
         // 컷 경계가 너무 딱딱하지 않게 양쪽 0.05초는 남긴다
         if (end - s0 >= a.minSil) {
-          const cutA = s0 + 0.05;
-          const cutB = Math.max(cutA + 0.05, end - 0.05);
-          if (cutB - cutA >= 0.1) cutRuns.push([cutA, cutB]);
+          const ca = s0 + 0.05;
+          const cb = Math.max(ca + 0.05, end - 0.05);
+          if (cb - ca >= 0.1) out.push([ca, cb]);
         }
         start = -1;
       }
     }
+    return out;
   }
 
   // 실제로 남겨 둘 구간(소스 시간). 자동 컷이 꺼져 있으면 트림 구간 하나.
-  function computeSegments(useCut) {
-    if (!useCut || !cutRuns.length) return [[S.trimStart, S.trimEnd]];
+  // 지울 구간 목록으로 남길 구간을 계산한다
+  function segsFromRuns(c, runs) {
+    if (!runs.length) return [[c.a, c.b]];
     const out = [];
-    let cur = S.trimStart;
-    for (let i = 0; i < cutRuns.length; i++) {
-      const a = Math.max(cutRuns[i][0], S.trimStart);
-      const b = Math.min(cutRuns[i][1], S.trimEnd);
+    let cur = c.a;
+    for (let i = 0; i < runs.length; i++) {
+      const a = Math.max(runs[i][0], c.a);
+      const b = Math.min(runs[i][1], c.b);
       if (b <= a) continue;
       if (a > cur) out.push([cur, a]);
       cur = Math.max(cur, b);
     }
-    if (cur < S.trimEnd) out.push([cur, S.trimEnd]);
+    if (cur < c.b) out.push([cur, c.b]);
     const keep = out.filter(function (s) { return s[1] - s[0] > 0.12; });
-    return keep.length ? keep : [[S.trimStart, S.trimEnd]];
-  }
-  function segments() {
-    return computeSegments(S.autocut.on);
+    return keep.length ? keep : [[c.a, c.b]];
   }
 
-  function keptDuration() {
-    const segs = segments();
-    let d = 0;
-    for (let i = 0; i < segs.length; i++) d += segs[i][1] - segs[i][0];
-    return d;
+  function clipSegs(c) {
+    if (!c) return [];
+    return segsFromRuns(c, S.autocut.on ? silentRuns(c) : []);
   }
-
-  /* ---------------- 스피드 램프: 속도 곡선과 시간 적분 ----------------
-     미리보기(캔버스)와 내보내기(MediaRecorder)가 같은 표를 쓰기 때문에
-     프레임 위치와 오디오 속도가 어긋나지 않는다.
-     표: 구간마다 RAMP_N 조각으로 나눠 출력 시간을 중점 적분한다. */
-  const RAMP_N = 240;
-  let rampCache = { key: '', segs: [], tables: [], cum: [0], total: 0, flat: true };
 
   // u(0~1) 지점의 속도 배율. 강도 k 만큼 기준 배속을 오르내린다.
   function rampMul(u) {
@@ -339,10 +425,10 @@
     if (k < 0.005) return 1;
     const span = clamp((S.speedRamp.span || 100) / 100, 0.2, 1);
     const uu = clamp((u - (1 - span) / 2) / span, 0, 1);
-    if (m === 'up') return 1 - k + 2 * k * uu;                        // 서서히 빠르게
-    if (m === 'down') return 1 + k - 2 * k * uu;                      // 서서히 느리게
-    if (m === 'highlight') return 1 - k + 2 * k * Math.abs(2 * uu - 1); // 빠→느→빠
-    if (m === 'jump') return 1 + k - 2 * k * Math.abs(2 * uu - 1);      // 느→빠→느
+    if (m === 'up') return 1 - k + 2 * k * uu;
+    if (m === 'down') return 1 + k - 2 * k * uu;
+    if (m === 'highlight') return 1 - k + 2 * k * Math.abs(2 * uu - 1);
+    if (m === 'jump') return 1 + k - 2 * k * Math.abs(2 * uu - 1);
     return 1;
   }
 
@@ -351,37 +437,52 @@
     return Math.max(0.1, S.speed * rampMul(clamp(u, 0, 1)));
   }
 
-  function rampState() {
-    const segs = segments();
-    const flat = S.speedRamp.mode === 'none' || rampMul(0) === 1 && rampMul(0.5) === 1 && rampMul(1) === 1;
+  function timeline() {
+    const flat = S.speedRamp.mode === 'none' || (rampMul(0) === 1 && rampMul(0.5) === 1 && rampMul(1) === 1);
     const key = [S.speed, S.speedRamp.mode, S.speedRamp.strength, S.speedRamp.span, flat ? 'flat' : 'ramp',
-      segs.map(function (s) { return s[0].toFixed(4) + '-' + s[1].toFixed(4); }).join(',')].join('|');
-    if (rampCache.key === key) return rampCache;
-    const tables = [], cum = [0];
+      S.autocut.on ? 1 : 0, S.autocut.thr, S.autocut.minSil,
+      S.clips.map(clipKey).join(',')].join('|');
+    if (tlCache.key === key) return tlCache;
+    const items = [], cum = [0];
     let total = 0;
     const spd = Math.max(0.05, S.speed);
-    for (let i = 0; i < segs.length; i++) {
-      const a = segs[i][0], b = segs[i][1], d = Math.max(0, b - a);
-      const t = new Float64Array(RAMP_N + 1);
-      if (flat) {
-        for (let j = 0; j <= RAMP_N; j++) t[j] = (j / RAMP_N) * d / spd;
-      } else {
-        let acc = 0;
-        for (let j = 0; j < RAMP_N; j++) {
-          acc += (d / RAMP_N) / speedAt((j + 0.5) / RAMP_N);
-          t[j + 1] = acc;
+    for (let i = 0; i < S.clips.length; i++) {
+      const c = S.clips[i];
+      const segs = clipSegs(c);
+      const tables = [], cumLocal = [0];
+      let d = 0;
+      for (let s = 0; s < segs.length; s++) {
+        const a = segs[s][0], b = segs[s][1];
+        const len = Math.max(0, b - a);
+        const t = new Float64Array(RAMP_N + 1);
+        if (flat) {
+          for (let j = 0; j <= RAMP_N; j++) t[j] = (j / RAMP_N) * len / spd;
+        } else {
+          let acc = 0;
+          for (let j = 0; j < RAMP_N; j++) {
+            acc += (len / RAMP_N) / speedAt((j + 0.5) / RAMP_N);
+            t[j + 1] = acc;
+          }
         }
+        tables.push(t);
+        d += t[RAMP_N];
+        cumLocal.push(d);
       }
-      tables.push(t);
-      total += t[RAMP_N];
+      items.push({ c: c, segs: segs, tables: tables, cumLocal: cumLocal, dur: d });
+      total += d;
       cum.push(total);
     }
-    rampCache = { key: key, segs: segs, tables: tables, cum: cum, total: total, flat: flat };
-    return rampCache;
+    tlCache = { key: key, items: items, cum: cum, total: total, flat: flat };
+    return tlCache;
+  }
+
+  function invalidateTimeline() {
+    tlCache.key = '__dirty__';
+    dirty = true;
   }
 
   function totalOut() {
-    return rampState().total;
+    return timeline().total;
   }
 
   // 표를 u 위치에서 선형 보간
@@ -392,62 +493,107 @@
     return table[i] * (1 - f) + table[i + 1] * f;
   }
 
-  function cutStats() {
-    const segs = computeSegments(true);
-    let kept = 0;
-    for (let i = 0; i < segs.length; i++) kept += segs[i][1] - segs[i][0];
-    const span = Math.max(0, S.trimEnd - S.trimStart);
-    let count = 0;
-    for (let i = 0; i < cutRuns.length; i++) {
-      const a = Math.max(cutRuns[i][0], S.trimStart);
-      const b = Math.min(cutRuns[i][1], S.trimEnd);
-      if (b > a + 0.01) count++;
-    }
-    return { count: count, removed: Math.max(0, span - kept), kept: kept, span: span };
-  }
-
-  // 소스 시간 → 출력 시간 (표 기준)
-  function outTimeAt(p) {
-    const st = rampState();
-    for (let i = 0; i < st.segs.length; i++) {
-      const a = st.segs[i][0], b = st.segs[i][1];
-      if (p < a) return st.cum[i];
+  // 클립 i 의 p(소스 시간) → 전체 출력 시간
+  function outAt(i, p) {
+    const T = timeline();
+    const n = T.items.length;
+    if (!n) return 0;
+    i = clamp(i, 0, n - 1);
+    const it = T.items[i];
+    const base = T.cum[i];
+    for (let s = 0; s < it.segs.length; s++) {
+      const a = it.segs[s][0], b = it.segs[s][1];
+      if (p < a) return base + it.cumLocal[s];
       if (p <= b) {
         const u = clamp((p - a) / Math.max(1e-6, b - a), 0, 1);
-        return st.cum[i] + rampAt(st.tables[i], u);
+        return base + it.cumLocal[s] + rampAt(it.tables[s], u);
       }
     }
-    return st.total;
+    return base + it.dur;
   }
 
-  function outTime() {
-    return outTimeAt(srcPos());
-  }
-
-  // 출력 시간 → 소스 시간 (내보내기 녹화·자막 큐가 쓰는 역함수)
-  function rampTime(tOut) {
-    const st = rampState();
-    if (!st.segs.length) return S.trimStart;
+  // 출력 시간 → { 클립 번호, 소스 시간 }
+  function srcAtOut(tOut) {
+    const T = timeline();
+    const n = T.items.length;
+    if (!n) return { i: 0, p: 0 };
     let i = 0;
-    while (i < st.segs.length - 1 && tOut >= st.cum[i + 1]) i++;
-    const local = clamp(tOut - st.cum[i], 0, st.tables[i][RAMP_N]);
-    const tab = st.tables[i];
+    while (i < n - 1 && tOut >= T.cum[i + 1]) i++;
+    const it = T.items[i];
+    const local = clamp(tOut - T.cum[i], 0, it.dur);
+    let s = 0;
+    while (s < it.segs.length - 1 && local >= it.cumLocal[s + 1]) s++;
+    const tab = it.tables[s];
+    const L = clamp(local - it.cumLocal[s], 0, tab[RAMP_N]);
     let lo = 0, hi = RAMP_N;
     while (lo + 1 < hi) {
       const mid = (lo + hi) >> 1;
-      if (tab[mid] < local) lo = mid; else hi = mid;
+      if (tab[mid] < L) lo = mid; else hi = mid;
     }
     const t0 = tab[lo], t1 = tab[hi];
-    const f = t1 > t0 ? (local - t0) / (t1 - t0) : 0;
-    const a = st.segs[i][0], b = st.segs[i][1];
-    return a + ((lo + f) / RAMP_N) * (b - a);
+    const f = t1 > t0 ? (L - t0) / (t1 - t0) : 0;
+    const a = it.segs[s][0], b = it.segs[s][1];
+    return { i: i, p: a + ((lo + f) / RAMP_N) * (b - a), seg: s };
   }
 
-  // 지금 소스 위치에서의 배속(램프 반영)
+  function outTime() {
+    return outAt(playIdx, srcPos());
+  }
+
+  // 출력 시간 → 소스 시간 (한 클립일 때 기존 API 그대로)
+  function rampTime(tOut) {
+    return srcAtOut(tOut).p;
+  }
+
+  function clipIndexAtOut(tOut) {
+    return srcAtOut(tOut).i;
+  }
+
+  function clipOutStart(i) {
+    const T = timeline();
+    return T.cum[clamp(i, 0, T.items.length)] || 0;
+  }
+  function clipOutEnd(i) {
+    const T = timeline();
+    return T.cum[clamp(i + 1, 0, T.items.length)] || T.total;
+  }
+
+  // 지금 클립의 남길 구간(호환용)
+  function segments() {
+    const c = activeClip();
+    return c ? clipSegs(c) : [];
+  }
+
+  function keptDuration() {
+    let d = 0;
+    S.clips.forEach(function (c) {
+      const segs = clipSegs(c);
+      for (let i = 0; i < segs.length; i++) d += segs[i][1] - segs[i][0];
+    });
+    return d;
+  }
+
+  function cutStats() {
+    let kept = 0, count = 0, span = 0;
+    S.clips.forEach(function (c) {
+      const runs = silentRuns(c);
+      const keep = segsFromRuns(c, runs);
+      for (let s = 0; s < keep.length; s++) kept += keep[s][1] - keep[s][0];
+      span += Math.max(0, c.b - c.a);
+      for (let r = 0; r < runs.length; r++) {
+        const a = Math.max(runs[r][0], c.a), b = Math.min(runs[r][1], c.b);
+        if (b > a + 0.01) count++;
+      }
+    });
+    return { count: count, removed: Math.max(0, span - kept), kept: kept, span: span };
+  }
+
+  // 지금 클립의 소스 위치에서의 배속(램프 반영)
   function speedAtSrc(p) {
-    const st = rampState();
-    for (let i = 0; i < st.segs.length; i++) {
-      const a = st.segs[i][0], b = st.segs[i][1];
+    const it = timeline().items[playIdx];
+    if (!it) return S.speed;
+    for (let s = 0; s < it.segs.length; s++) {
+      const a = it.segs[s][0], b = it.segs[s][1];
       if (p >= a && p <= b) return speedAt((p - a) / Math.max(1e-6, b - a));
     }
     return S.speed;
@@ -455,26 +601,28 @@
 
   // 비디오 요소 재생 속도를 램프에 맞춘다
   function applyVideoRate() {
-    if (mode !== 'video') return;
+    const c = activeClip();
+    if (!c || c.kind !== 'video' || !c.el) return;
     const v = clamp(speedAtSrc(srcPos()), 0.0625, 16);
     try {
-      if (Math.abs((video.playbackRate || 1) - v) > 0.008) video.playbackRate = v;
+      if (Math.abs((c.el.playbackRate || 1) - v) > 0.008) c.el.playbackRate = v;
     } catch (e) { /* noop */ }
     applyPitchToVideo();
   }
 
   // 재생·내보내기 중 무음 구간을 만나면 다음 남길 구간으로 건너뛴다
   function enforceSegments() {
-    if (mode !== 'video' || !S.autocut.on || !cutRuns.length) return false;
-    const segs = segments();
+    const c = activeClip();
+    if (!c || c.kind !== 'video' || !c.el || !S.autocut.on) return false;
+    const segs = clipSegs(c);
     if (!segs.length) return false;
-    const t = video.currentTime || 0;
+    const t = c.el.currentTime || 0;
     for (let i = 0; i < segs.length; i++) {
       const a = segs[i][0], b = segs[i][1];
       if (t >= a - 0.06 && t <= b + 0.02) return false;
-      if (t < a) { try { video.currentTime = a; } catch (e) { /* noop */ } return true; }
+      if (t < a) { try { c.el.currentTime = a; } catch (e) { /* noop */ } return true; }
     }
-    try { video.currentTime = segs[0][0]; } catch (e) { /* noop */ }
+    try { c.el.currentTime = segs[0][0]; } catch (e) { /* noop */ }
     return true;
   }
 
@@ -491,10 +639,11 @@
      분할점은 '결과(출력) 영상' 시간으로 저장한다. 미리보기·내보내기가 같은
      drawScene(t) 를 쓰기 때문에, t 가 속한 컷만 찾으면 화면과 녹화가 같이 맞는다. */
   const CUT_GAP = 0.25;            // 분할점 사이·양 끝과의 최소 간격(초)
-  const SCENE_DEFAULT = '영상을 불러온 뒤 ‘장면 전환 감지’를 누르면 화면이 확 바뀌는 지점을 찾습니다.';
+  const SCENE_DEFAULT = '영상을 불러온 뒤 ‘장면 전환 감지’를 누르면 화면이 확 바뀌는 지점을 찾아 바로 컷으로 나눕니다.';
   let cutScanning = false;
   let sceneMsg = SCENE_DEFAULT;
   let sceneCls = '';
+  let cutUndo = null;
 
   function cutTotal() {
     return Math.max(0.2, totalOut());
@@ -586,6 +735,34 @@
     S.cutOv[i].corner = Object.assign({}, S.ov.corner);
   }
 
+  function snapshotCuts() {
+    return {
+      pts: cutPoints().slice(),
+      every: S.cut.every,
+      sel: S.cutSel,
+      ov: JSON.parse(JSON.stringify(Array.isArray(S.cutOv) ? S.cutOv : []))
+    };
+  }
+  function updateCutUndoUI() {
+    const b = $('#btnCutUndo');
+    if (b) b.disabled = !cutUndo;
+  }
+  function undoCutSplit() {
+    if (!cutUndo) { toast('되돌릴 분할이 없어요'); return false; }
+    S.cut.pts = cutUndo.pts.slice();
+    S.cut.every = cutUndo.every || 0;
+    S.cutSel = cutUndo.sel || 0;
+    S.cutOv = JSON.parse(JSON.stringify(cutUndo.ov || []));
+    cutUndo = null;
+    syncCutOverlays();
+    renderCutUI();
+    updateCutUndoUI();
+    dirty = true;
+    setSceneInfo('분할을 되돌렸어요 · 지금 ' + cutCount() + '컷', 'ok');
+    toast('분할을 되돌렸어요');
+    return true;
+  }
+
   function addCutPoint(tOut) {
     const total = cutTotal();
     const at = Math.round(clamp(Number(tOut) || 0, 0, total) * 1000) / 1000;
@@ -600,6 +777,7 @@
         return false;
       }
     }
+    cutUndo = snapshotCuts();
     // 새 분할점이 들어갈 순서 = 나뉘는 컷 번호
     const pos = pts.filter(function (p) { return p < at; }).length;
     pts.splice(pos, 0, at);
@@ -610,6 +788,7 @@
     }
     syncCutOverlays();
     renderCutUI();
+    updateCutUndoUI();
     dirty = true;
     return true;
   }
@@ -618,6 +797,7 @@
   function removeCutPoint(i) {
     const pts = cutPoints();
     if (i < 0 || i >= pts.length) return;
+    cutUndo = snapshotCuts();
     pts.splice(i, 1);
     S.cut.pts = pts;
     if (S.cutOv.length >= 2) {
@@ -626,6 +806,7 @@
     }
     syncCutOverlays();
     renderCutUI();
+    updateCutUndoUI();
     dirty = true;
   }
 
@@ -638,11 +819,13 @@
       toast('영상이 ' + s + '초보다 짧아 나눌 컷이 없어요');
       return false;
     }
+    cutUndo = snapshotCuts();
     S.cut.pts = pts;
     S.cut.every = s;
     S.cut.found = [];
     syncCutOverlays();
     renderCutUI();
+    updateCutUndoUI();
     dirty = true;
     toast(pts.length + 1 + '컷으로 나눴어요 (' + s + '초 간격)');
     return true;
@@ -654,9 +837,11 @@
     S.cut.found = [];
     S.cutOv = [];
     S.cutSel = 0;
+    cutUndo = null;
     sceneMsg = SCENE_DEFAULT;
     sceneCls = '';
     renderCutUI();
+    updateCutUndoUI();
     dirty = true;
     if (!silent) toast('분할을 모두 지웠어요');
   }
@@ -674,7 +859,7 @@
     }
     syncUI();
     const r = cutRange(S.cutSel);
-    if (!exp) seekTo(rampTime(r[0] + Math.min(0.2, Math.max(0.02, (r[1] - r[0]) * 0.3))));
+    if (!exp) seekOut(r[0] + Math.min(0.2, Math.max(0.02, (r[1] - r[0]) * 0.3)));
     renderCutUI();
     dirty = true;
   }
@@ -690,7 +875,8 @@
     toast('컷 ' + (i + 1) + ' 설정을 모든 컷에 복사했어요');
   }
 
-  /* ---- 장면 전환 자동 감지 (작은 캔버스에 프레임을 샘플링해 밝기 변화를 잰다) ---- */
+  /* ---- 장면 전환 자동 감지 (작은 캔버스에 프레임을 샘플링해 밝기 변화를 잰다) ----
+     스캔이 끝나면 곧바로 컷으로 나눈다(원클릭). 직전 상태는 ‘분할 되돌리기’로 되살린다. */
   const SCAN_W = 48, SCAN_H = 27;
   const scanCvs = document.createElement('canvas');
   scanCvs.width = SCAN_W;
@@ -703,8 +889,8 @@
     return 0.012 + Math.pow(1 - s, 1.5) * 0.30;
   }
 
-  function grabGray() {
-    scanCtx.drawImage(mode === 'video' ? video : demoCanvas, 0, 0, SCAN_W, SCAN_H);
+  function grabGray(el) {
+    scanCtx.drawImage(el || demoCanvas, 0, 0, SCAN_W, SCAN_H);
     const d = scanCtx.getImageData(0, 0, SCAN_W, SCAN_H).data;
     const g = new Float32Array(SCAN_W * SCAN_H);
     for (let i = 0, j = 0; i < d.length; i += 4, j++) g[j] = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
@@ -728,94 +914,120 @@
   async function scanScenes() {
     if (cutScanning) return [];
     if (exp) { toast('내보내기 중에는 장면을 감지할 수 없어요'); return []; }
-    if (mode === 'video' && !video.videoWidth) { toast('영상을 아직 불러오는 중이에요. 잠시 후 다시 시도해 주세요'); return []; }
+    if (!S.clips.length) { toast('영상을 먼저 불러와 주세요'); return []; }
     const step = clamp(Number(S.cut.step) || 0.3, 0.15, 2);
     const thr = sceneThreshold(S.cut.sens);
-    const a = S.trimStart, b = S.trimEnd;
-    if (b - a < step * 2) { toast('구간이 너무 짧아 장면 전환을 찾기 어려워요'); return []; }
 
     const wasPlaying = playing;
-    const backSrc = srcPos();
-    if (wasPlaying) { playing = false; try { video.pause(); } catch (e) { /* noop */ } updatePlayBtn(); }
+    const backOut = outTime();
+    if (wasPlaying) { playing = false; pauseAll(); updatePlayBtn(); }
     cutScanning = true;
     if (btnSceneScan) btnSceneScan.disabled = true;
+    const before = snapshotCuts();
     const found = [];
     let readFail = false;
-    const total = Math.max(1, Math.ceil((b - a) / step));
-    let prev = null, lastHit = -1e9, n = 0;
-    setSceneInfo('장면을 살피는 중… 0%');
+    let scanned = 0, hits = 0;
+
     try {
-      for (let t = a; t <= b - 0.02; t += step) {
-        if (mode === 'video') await seekVideo(t);
-        else { paintDemo(t); demoPainted = t; }
-        let g = null;
-        try { g = grabGray(); } catch (e) { readFail = true; break; }
-        if (prev) {
-          const d = grayDiff(prev, g);
-          if (d >= thr && (t - lastHit) >= Math.max(0.5, step * 1.6)) {
-            // 두 샘플 사이를 이분 탐색해 전환 지점을 좁힌다(간격/2 의 1/16 수준까지)
-            let lo = t - step, hi = t;
-            for (let k = 0; k < 4; k++) {
-              const mid = (lo + hi) / 2;
-              if (mode === 'video') await seekVideo(mid);
-              else { paintDemo(mid); demoPainted = mid; }
-              let mg = null;
-              try { mg = grabGray(); } catch (e2) { mg = null; }
-              if (!mg) break;
-              if (grayDiff(prev, mg) >= thr) hi = mid; else lo = mid;
-            }
-            const at = outTimeAt(hi);
-            if (at > CUT_GAP && at < cutTotal() - CUT_GAP) {
-              found.push(Math.round(at * 1000) / 1000);
-              lastHit = t;
+      for (let ci = 0; ci < S.clips.length; ci++) {
+        const c = S.clips[ci];
+        const a = c.a, b = c.b;
+        if (b - a < step * 2) continue;
+        setActive(ci, { silent: true });
+        if (c.kind === 'video' && c.el) await seekEl(c.el, a);
+        let prev = null, lastHit = -1e9, n = 0;
+        const total = Math.max(1, Math.ceil((b - a) / step));
+        for (let t = a; t <= b - 0.02; t += step) {
+          if (c.kind === 'video' && c.el) await seekEl(c.el, t);
+          else { paintDemo(t); demoPainted = t; }
+          let g = null;
+          try { g = grabGray(c.kind === 'video' ? c.el : demoCanvas); } catch (e) { readFail = true; break; }
+          if (prev) {
+            const d = grayDiff(prev, g);
+            if (d >= thr && (t - lastHit) >= Math.max(0.5, step * 1.6)) {
+              // 두 샘플 사이를 이분 탐색해 전환 지점을 좁힌다(간격/2 의 1/16 수준까지)
+              let lo = t - step, hi = t;
+              for (let k = 0; k < 4; k++) {
+                const mid = (lo + hi) / 2;
+                if (c.kind === 'video' && c.el) await seekEl(c.el, mid);
+                else { paintDemo(mid); demoPainted = mid; }
+                let mg = null;
+                try { mg = grabGray(c.kind === 'video' ? c.el : demoCanvas); } catch (e2) { mg = null; }
+                if (!mg) break;
+                if (grayDiff(prev, mg) >= thr) hi = mid; else lo = mid;
+              }
+              const at = outAt(ci, hi);
+              if (at > CUT_GAP && at < cutTotal() - CUT_GAP) {
+                found.push(Math.round(at * 1000) / 1000);
+                lastHit = t;
+                hits++;
+              }
             }
           }
+          prev = g;
+          n++;
+          scanned++;
+          if (n % 6 === 0) {
+            setSceneInfo('장면을 살피는 중… ' + Math.round((n / total) * 100) + '%'
+              + (S.clips.length > 1 ? ' (클립 ' + (ci + 1) + '/' + S.clips.length + ')' : ''));
+            await new Promise(function (r) { setTimeout(r, 0); });
+          }
         }
-        prev = g;
-        n++;
-        if (n % 6 === 0) {
-          setSceneInfo('장면을 살피는 중… ' + Math.round((n / total) * 100) + '%');
-          await new Promise(function (r) { setTimeout(r, 0); });
-        }
+        if (readFail) break;
       }
     } catch (e) {
       readFail = true;
     } finally {
       cutScanning = false;
       if (btnSceneScan) btnSceneScan.disabled = false;
-      if (mode === 'video') { try { await seekVideo(backSrc); } catch (e) { /* noop */ } }
-      else demoPainted = -1;   // 다음 프레임에 원래 위치를 다시 그린다
+      try { seekOut(backOut); } catch (e) { /* noop */ }
+      if (mode === 'demo') demoPainted = -1;
       dirty = true;
     }
 
     if (readFail) {
       S.cut.found = [];
+      cutUndo = null;
       setSceneInfo('이 영상은 브라우저가 화면 픽셀을 읽지 못해 장면 전환을 감지할 수 없어요. 같은 기기에서 고른 영상 파일을 다시 불러오거나, ‘일정 간격 자동 분할’을 써 주세요.', 'warn');
       toast('화면 픽셀을 읽을 수 없어 장면 전환을 감지하지 못했어요');
       renderCutUI();
+      updateCutUndoUI();
       return [];
     }
-    S.cut.found = found;
-    if (found.length) {
-      setSceneInfo('장면 전환 ' + found.length + '곳을 찾았어요. ‘감지한 지점 적용’을 누르면 컷으로 나눕니다.', 'ok');
-      toast('장면 전환 ' + found.length + '곳을 찾았어요');
-    } else {
+    if (!found.length) {
+      S.cut.found = [];
+      cutUndo = null;
       setSceneInfo('장면 전환이 뚜렷하게 잡히지 않았어요. 민감도를 올리거나 샘플 간격을 좁혀 다시 시도해 보세요.', 'warn');
       toast('장면 전환이 뚜렷하지 않아요. 민감도를 올려 다시 해 보세요');
+      renderCutUI();
+      updateCutUndoUI();
+      return [];
     }
+    // 원클릭: 감지 즉시 컷 분할 적용
+    S.cut.found = found.slice();
+    S.cut.pts = found.slice().sort(function (x, y) { return x - y; });
+    S.cut.every = 0;
+    cutUndo = before;
+    syncCutOverlays();
     renderCutUI();
+    updateCutUndoUI();
+    setSceneInfo('장면 전환 ' + found.length + '곳을 찾았어요 · 바로 ' + cutCount() + '컷으로 나눴습니다. 마음에 안 들면 ‘분할 되돌리기’.', 'ok');
+    toast(cutCount() + '컷으로 나눴어요 (장면 전환 ' + found.length + '곳)');
     return found;
   }
 
+  // (호환) 감지해 둔 지점을 지금 적용
   function applyFoundCuts() {
     const found = Array.isArray(S.cut.found) ? S.cut.found : [];
     if (!found.length) { toast('먼저 장면 전환을 감지해 주세요'); return false; }
     const pts = cutPoints().concat(found).sort(function (x, y) { return x - y; });
+    cutUndo = snapshotCuts();
     S.cut.pts = pts;
     S.cut.found = [];
     S.cut.every = 0;
     syncCutOverlays();
     renderCutUI();
+    updateCutUndoUI();
     dirty = true;
     setSceneInfo('감지한 지점을 적용했어요 · 지금 ' + cutCount() + '컷입니다.', 'ok');
     toast(cutCount() + '컷으로 나눴어요');
@@ -842,7 +1054,7 @@
       let html = '';
       for (let i = 0; i < n; i++) {
         const r = cutRange(i);
-        html += '<div class="cut-row' + (i === sel ? ' on' : '') + '">'
+        html += '<div class="cut-row' + (i === sel ? ' on' : '') + '" data-cut-row="' + i + '">'
           + '<span class="cut-no">컷 ' + (i + 1) + '</span>'
           + '<span class="cut-time">' + fmtSec1(r[0]) + ' – ' + fmtSec1(r[1]) + '</span>'
           + '<span class="cut-len">' + (r[1] - r[0]).toFixed(1) + '초</span>'
@@ -853,9 +1065,18 @@
       }
       cutListEl.innerHTML = html;
       $$('#cutList .cut-del[data-del]').forEach(function (b) {
-        b.addEventListener('click', function () {
+        b.addEventListener('click', function (ev) {
+          ev.stopPropagation();
           removeCutPoint(Number(b.dataset.del) - 1);
           toast('분할점을 지웠어요 · ' + cutCount() + '컷');
+        });
+      });
+      $$('#cutList .cut-row[data-cut-row]').forEach(function (row) {
+        row.addEventListener('click', function () {
+          const i = Number(row.dataset.cutRow);
+          const r = cutRange(i);
+          seekOut(r[0] + 0.01);
+          if (cutCount() > 1) selectCut(i);
         });
       });
     }
@@ -880,13 +1101,14 @@
       el.hidden = n < 2;
       el.textContent = '컷 ' + (S.cutSel + 1);
     });
-    if (btnSceneApply) btnSceneApply.hidden = !(S.cut.found && S.cut.found.length);
     if (!S.cut.found || !S.cut.found.length) {
       if (sceneInfoEl && !cutScanning) {
         sceneInfoEl.textContent = sceneMsg;
         sceneInfoEl.className = 'hint' + (sceneCls ? ' ' + sceneCls : '');
       }
     }
+    if (typeof renderTimeline === 'function') renderTimeline();
+    updateCutUndoUI();
   }
 
   /* ---------------- demo source painter ---------------- */
@@ -1393,6 +1615,26 @@
   }
 
   /* ---------------- playback loop ---------------- */
+  function gotoClip(i, atSrc) {
+    const c = clipAt(i);
+    if (!c) return;
+    const segs = clipSegs(c);
+    const p = atSrc == null ? (segs[0] ? segs[0][0] : c.a) : atSrc;
+    setActive(i);
+    if (c.kind === 'video' && c.el) {
+      try { c.el.currentTime = clamp(p, 0, Math.max(0.01, c.dur)); } catch (e) { /* noop */ }
+      try { c.el.playbackRate = clamp(speedAtSrc(p), 0.0625, 16); } catch (e) { /* noop */ }
+      applyPitchToVideo();
+      if (playing) {
+        const pr = c.el.play();
+        if (pr && pr.catch) pr.catch(function () { /* noop */ });
+      }
+    } else {
+      demoAbs = p;
+    }
+    dirty = true;
+  }
+
   function tick(ts) {
     // 내보내기 중에는 실제 경과 시간을 그대로 써서 영상 길이가 밀리지 않게 한다
     const raw = lastTs ? (ts - lastTs) / 1000 : 0;
@@ -1400,21 +1642,24 @@
     lastTs = ts;
 
     if (playing) {
-      if (mode === 'demo') {
-        demoAbs += dt * (S.speedRamp.mode === 'none' ? S.speed : speedAtSrc(demoAbs));
-        if (!exp) {
-          const seg = Math.max(0.2, S.trimEnd - S.trimStart);
-          if (demoAbs >= S.trimEnd) demoAbs = S.trimStart + ((demoAbs - S.trimStart) % seg);
+      const c = activeClip();
+      if (c && c.kind === 'demo') {
+        demoAbs += dt * speedAtSrc(demoAbs);
+        if (demoAbs >= c.b - 0.001) {
+          if (playIdx < S.clips.length - 1) gotoClip(playIdx + 1);
+          else if (!exp) demoAbs = c.a + ((demoAbs - c.a) % Math.max(0.2, c.b - c.a));
+          else demoAbs = c.b;
         }
-      } else if (!exp) {
-        if (video.currentTime >= S.trimEnd - 0.03 || video.currentTime < S.trimStart - 0.6) {
-          const segs = S.autocut.on ? segments() : null;
-          try { video.currentTime = segs && segs.length ? segs[0][0] : S.trimStart; } catch (e) { /* noop */ }
-        }
-      }
-      if (mode === 'video') {
+      } else if (c && c.kind === 'video' && c.el) {
         enforceSegments();
         applyVideoRate();     // 스피드 램프 → 재생 중에도 속도가 서서히 변한다
+        if (c.el.currentTime >= c.b - 0.03 || c.el.ended) {
+          if (playIdx < S.clips.length - 1) gotoClip(playIdx + 1);
+          else if (!exp) {
+            const segs = clipSegs(c);
+            try { c.el.currentTime = segs[0] ? segs[0][0] : c.a; } catch (e) { /* noop */ }
+          }
+        }
       }
       dirty = true;
     }
@@ -1446,13 +1691,14 @@
     if (!speedOutHint) return;
     const out = totalOut();
     const st = cutStats();
-    const cut = S.autocut.on && cutRuns.length ? ' · 무음 ' + st.count + '곳 ' + st.removed.toFixed(1) + '초 제거' : '';
+    const cut = S.autocut.on && st.count ? ' · 무음 ' + st.count + '곳 ' + st.removed.toFixed(1) + '초 제거' : '';
     const rp = S.speedRamp.mode && S.speedRamp.mode !== 'none' ? ' · 스피드 램프' : '';
     const semi = S.pitch.semi || 0;
     const pitchNote = !S.pitch.lock
       ? ' · 음정도 배속을 따라감'
       : (semi ? ' · 음정 유지 ' + (semi > 0 ? '+' : '') + semi + '반음' : ' · 소리는 음정 유지');
-    speedOutHint.textContent = '이 배속으로 내보내면 ' + fmtSec1(out) + cut + rp + pitchNote;
+    const clipNote = S.clips.length > 1 ? ' · 클립 ' + S.clips.length + '개' : '';
+    speedOutHint.textContent = '이 배속으로 내보내면 ' + fmtSec1(out) + clipNote + cut + rp + pitchNote;
     const rh = $('#rampHint');
     if (rh) {
       if (!S.speedRamp.mode || S.speedRamp.mode === 'none') {
@@ -1468,12 +1714,13 @@
   }
 
   function updateTransport() {
-    const seg = Math.max(0.001, S.trimEnd - S.trimStart);
-    const pos = clamp(srcPos() - S.trimStart, 0, seg);
-    timeLabel.textContent = fmtTime(pos) + ' / ' + fmtTime(seg);
-    timeFill.style.width = (pos / seg * 100).toFixed(2) + '%';
+    const total = Math.max(0.001, totalOut());
+    const pos = clamp(outTime(), 0, total);
+    timeLabel.textContent = fmtTime(pos) + ' / ' + fmtTime(total);
+    timeFill.style.width = (pos / total * 100).toFixed(2) + '%';
     speedChip.textContent = speedLabel(S.speed);
     updateCutNow();
+    updatePlayhead();
   }
 
   function updatePlayBtn() {
@@ -1483,36 +1730,30 @@
 
   async function setPlaying(v) {
     if (v && exp) return;
-    if (mode === 'video') {
-      if (v) {
-        const g = ensureAudioGraph();
-        playing = true;
-        updatePlayBtn();
-        if (g) startPreviewAudio(g);
+    const c = activeClip();
+    if (v) {
+      if (!c) return;
+      const g = ensureAudioGraph();
+      playing = true;
+      updatePlayBtn();
+      if (g) startPreviewAudio(g);
+      if (c.kind === 'video' && c.el) {
         try {
-          await video.play();
+          await c.el.play();
         } catch (e) {
           playing = false;
           stopPreviewAudio();
           updatePlayBtn();
           toast('재생할 수 없어요. 영상을 다시 선택해 주세요.');
         }
-      } else {
-        playing = false;
-        video.pause();
-        stopPreviewAudio();
       }
     } else {
-      if (v) {
-        const g = ensureAudioGraph();
-        if (g) startPreviewAudio(g);
-      } else {
-        stopPreviewAudio();
-      }
-      playing = v;
+      playing = false;
+      pauseAll();
+      stopPreviewAudio();
+      updatePlayBtn();
     }
     dirty = true;
-    updatePlayBtn();
   }
 
   function startPreviewAudio(g) {
@@ -1535,13 +1776,13 @@
     }
   }
 
-  function seekTo(srcTime) {
-    const t = clamp(srcTime, 0, sourceDur);
-    if (mode === 'video') {
-      try { video.currentTime = t; } catch (e) { /* noop */ }
-    } else {
-      demoAbs = t;
-    }
+  // 출력(결과 영상) 시간으로 이동 — 클립이 바뀌면 그 클립으로 넘어간다
+  function seekOut(tOut) {
+    const T = timeline();
+    if (!T.items.length) return;
+    const at = srcAtOut(clamp(tOut, 0, T.total));
+    if (at.i !== playIdx) gotoClip(at.i, at.p);
+    else seekClipSrc(playIdx, at.p);
     dirty = true;
   }
 
@@ -1780,6 +2021,7 @@
     if (!audioGraph) {
       try {
         const actx = new AC();
+        const srcBus = actx.createGain();          // 클립 소리를 모으는 버스
         const origGain = actx.createGain();
         const bgmGain = actx.createGain();
         const duckGain = actx.createGain();
@@ -1795,6 +2037,7 @@
         agcGain.gain.value = 1;
         agcAnalyser.connect(agcGain);
         const dest = actx.createMediaStreamDestination();
+        srcBus.connect(origGain);
         origGain.connect(analyser);
         analyser.connect(master);
         bgmGain.connect(duckGain);
@@ -1804,7 +2047,7 @@
         mon.connect(actx.destination);
         master.connect(dest);
         audioGraph = {
-          ctx: actx, src: null, origGain: origGain, bgmGain: bgmGain, duckGain: duckGain,
+          ctx: actx, src: srcBus, mediaSrc: {}, origGain: origGain, bgmGain: bgmGain, duckGain: duckGain,
           sfxGain: sfxGain, master: master, mon: mon, dest: dest, analyser: analyser,
           agcAnalyser: agcAnalyser, agcGain: agcGain, agcEnv: 0, agcBuf: null,
           pitch: null, pitchSP: null, pitchRatio: 1, agc: null, fxTail: null,
@@ -1817,9 +2060,16 @@
       }
     }
     const g = audioGraph;
-    if (mode === 'video' && !g.src) {
+    // 클립마다 미디어 소스 + 클립 볼륨 게인을 한 번만 만든다
+    for (let i = 0; i < S.clips.length; i++) {
+      const c = S.clips[i];
+      if (c.kind !== 'video' || !c.el || g.mediaSrc[c.id]) continue;
       try {
-        g.src = g.ctx.createMediaElementSource(video);
+        const node = g.ctx.createMediaElementSource(c.el);
+        const gain = g.ctx.createGain();
+        node.connect(gain);
+        gain.connect(g.src);
+        g.mediaSrc[c.id] = { node: node, gain: gain };
       } catch (e) { /* 이미 연결됨 */ }
     }
     ensureWorklet(g);
@@ -1828,6 +2078,18 @@
     applyAudioLevels();
     applyPitchToVideo();
     return g;
+  }
+
+  // 클립별 볼륨·음소거를 오디오 그래프에 반영한다
+  function applyClipAudio() {
+    const g = audioGraph;
+    if (!g || !g.mediaSrc) return;
+    S.clips.forEach(function (c) {
+      const m = g.mediaSrc[c.id];
+      if (!m || !m.gain) return;
+      const v = c.mute ? 0 : clamp((c.vol == null ? 100 : c.vol) / 100, 0, 1.5);
+      try { m.gain.gain.setTargetAtTime(v, g.ctx.currentTime, 0.01); } catch (e) { m.gain.gain.value = v; }
+    });
   }
 
   function applyAudioLevels() {
@@ -1846,6 +2108,7 @@
       g.agcGain.gain.value = 1;
       g.agcEnv = 0;
     }
+    applyClipAudio();
   }
 
   // 워클릿 AGC 를 못 쓸 때: 분석기 RMS 로 게인을 메인 스레드에서 라이딩한다
@@ -2074,15 +2337,16 @@
     return nodes;
   }
 
-  // 효과음이 들어갈 지점(출력 시간 기준)
+  // 효과음이 들어갈 지점(출력 시간 기준) — 클립마다 남긴 구간 시작
   function sfxTimes() {
     if (!S.sfx.id || S.sfx.id === 'none') return [];
     if (S.sfx.at === 'sub') return [0.25];
-    const segs = segments();
-    const spd = Math.max(0.05, S.speed);
+    const T = timeline();
     const out = [];
-    let acc = 0;
-    for (let i = 0; i < segs.length; i++) { out.push(acc / spd); acc += segs[i][1] - segs[i][0]; }
+    for (let i = 0; i < T.items.length; i++) {
+      const it = T.items[i];
+      for (let s = 0; s < it.segs.length; s++) out.push(T.cum[i] + it.cumLocal[s]);
+    }
     return out;
   }
 
@@ -2140,134 +2404,289 @@
     }
   }
 
-  /* ---------------- source loading ---------------- */
+  /* ---------------- source loading (클립 추가·교체) ---------------- */
   function updateSrcInfo(text) {
     srcInfo.textContent = text;
   }
 
-  function setDuration(d) {
-    sourceDur = Math.max(0.5, d || DEMO_DURATION);
-    S.trimStart = 0;
-    S.trimEnd = sourceDur;
-    updateTrimUI();
-    dirty = true;
-  }
-
   function updateTrimUI() {
+    const c = activeClip();
+    if (!c) return;
+    const dur = Math.max(0.4, c.dur || DEMO_DURATION);
     trimStartEl.step = '0.05';
     trimEndEl.step = '0.05';
     trimStartEl.min = '0';
     trimEndEl.min = '0';
-    trimStartEl.max = sourceDur.toFixed(2);
-    trimEndEl.max = sourceDur.toFixed(2);
-    trimStartEl.value = S.trimStart.toFixed(2);
-    trimEndEl.value = S.trimEnd.toFixed(2);
-    trimStartLabel.textContent = fmtTime(S.trimStart);
-    trimEndLabel.textContent = fmtTime(S.trimEnd);
-    trimDurLabel.textContent = fmtTime(S.trimEnd - S.trimStart);
-    outTrimStart.textContent = fmtTime(S.trimStart);
-    outTrimEnd.textContent = fmtTime(S.trimEnd);
+    trimStartEl.max = dur.toFixed(2);
+    trimEndEl.max = dur.toFixed(2);
+    trimStartEl.value = c.a.toFixed(2);
+    trimEndEl.value = c.b.toFixed(2);
+    trimStartLabel.textContent = fmtTime(c.a);
+    trimEndLabel.textContent = fmtTime(c.b);
+    trimDurLabel.textContent = fmtTime(Math.max(0, c.b - c.a));
+    outTrimStart.textContent = fmtTime(c.a);
+    outTrimEnd.textContent = fmtTime(c.b);
+    const tag = $('#trimClipTag');
+    if (tag) tag.textContent = '클립 ' + (S.selClip + 1);
+    syncTrimState();
     updateSpeedHint();
   }
 
   function applyTrimToSource() {
-    if (mode === 'video') {
-      if (video.currentTime < S.trimStart || video.currentTime > S.trimEnd) {
-        try { video.currentTime = S.trimStart; } catch (e) { /* noop */ }
-      }
-    } else if (demoAbs < S.trimStart || demoAbs > S.trimEnd) {
-      demoAbs = S.trimStart;
-    }
+    const c = activeClip();
+    if (!c) return;
+    const p = srcPos();
+    if (p < c.a || p > c.b) seekClipSrc(playIdx, c.a);
     dirty = true;
   }
 
-  function loadFile(file) {
-    if (!file) return;
-    if (exp) { toast('내보내기 중에는 영상을 바꿀 수 없어요'); return; }
-    if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(file.name)) {
-      toast('영상 파일을 선택해 주세요');
-      return;
+  function looksVideo(file) {
+    if (!file) return false;
+    return /^video\//.test(file.type || '') || /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(file.name || '');
+  }
+
+  function clearClips() {
+    pauseAll();
+    S.clips.forEach(function (c) {
+      if (c.el) {
+        c.el.removeAttribute('src');
+        try { c.el.load(); } catch (e) { /* noop */ }
+        try { c.el.remove(); } catch (e) { /* noop */ }
+      }
+      if (c.url) { try { URL.revokeObjectURL(c.url); } catch (e) { /* noop */ } }
+    });
+    if (audioGraph && audioGraph.mediaSrc) {
+      Object.keys(audioGraph.mediaSrc).forEach(function (k) {
+        const m = audioGraph.mediaSrc[k];
+        try { m.node.disconnect(); m.gain.disconnect(); } catch (e) { /* noop */ }
+      });
+      audioGraph.mediaSrc = {};
     }
-    if (objURL) URL.revokeObjectURL(objURL);
-    objURL = URL.createObjectURL(file);
-    pendingName = file.name;
-    srcFile = file;
-    // 새 영상이면 이전 무음 분석 결과를 버린다
-    S.autocut.windows = [];
-    S.autocut.analyzed = false;
-    cutRuns = [];
+    S.clips = [];
+    S.selClip = 0;
+    playIdx = 0;
+    video = null;
+    mode = 'demo';
+    sourceDur = DEMO_DURATION;
+    invalidateTimeline();
+  }
+
+  function makeVideoEl(c) {
+    const el = document.createElement('video');
+    el.playsInline = true;
+    el.setAttribute('playsinline', '');
+    el.setAttribute('webkit-playsinline', '');
+    el.preload = 'auto';
+    el.loop = false;
+    el.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    el.src = c.url;
+    el.addEventListener('seeked', function () { dirty = true; });
+    el.addEventListener('loadeddata', function () {
+      c.w = el.videoWidth || c.w;
+      c.h = el.videoHeight || c.h;
+      dirty = true;
+    });
+    el.addEventListener('error', function () {
+      toast('이 영상 형식은 브라우저가 읽지 못해요: ' + c.name);
+    });
+    document.body.appendChild(el);
+    try { el.load(); } catch (e) { /* noop */ }
+    return el;
+  }
+
+  function loadClipMeta(c) {
+    const el = c.el;
+    return new Promise(function (resolve) {
+      if (!el) return resolve();
+      if (el.readyState >= 1 && isFinite(el.duration) && el.duration > 0) return resolve();
+      let done = false;
+      const fin = function () {
+        if (done) return;
+        done = true;
+        el.removeEventListener('loadedmetadata', fin);
+        el.removeEventListener('error', fin);
+        resolve();
+      };
+      el.addEventListener('loadedmetadata', fin);
+      el.addEventListener('error', fin);
+      setTimeout(fin, 9000);
+    }).then(function () {
+      if (!el) return;
+      let d = el.duration;
+      if (!isFinite(d) || !d) {
+        // MediaRecorder로 만든 webm 등은 길이가 Infinity/NaN → 끝까지 탐색해 길이를 확정
+        return new Promise(function (resolve) {
+          let done = false;
+          const fin = function () {
+            if (done) return;
+            done = true;
+            el.removeEventListener('durationchange', onDur);
+            resolve();
+          };
+          const onDur = function () { const v = el.duration; if (isFinite(v) && v > 0) fin(); };
+          el.addEventListener('durationchange', onDur);
+          try { el.currentTime = 1e7; } catch (e) { fin(); }
+          setTimeout(fin, 3000);
+        });
+      }
+    }).then(function () {
+      if (!el) return;
+      let d = el.duration;
+      if (!isFinite(d) || !d) d = DEMO_DURATION;
+      c.dur = Math.max(0.4, d);
+      c.a = 0;
+      c.b = c.dur;
+      c.w = el.videoWidth || c.w || 0;
+      c.h = el.videoHeight || c.h || 0;
+      try { el.currentTime = 0; } catch (e) { /* noop */ }
+    });
+  }
+
+  async function makeStrip(c) {
+    if (!c) return;
+    const isV = c.kind === 'video' && c.el;
+    if (isV && c.el.readyState < 2) {
+      await new Promise(function (res) {
+        let done = false;
+        const fin = function () {
+          if (done) return;
+          done = true;
+          if (c.el) c.el.removeEventListener('loadeddata', fin);
+          res();
+        };
+        c.el.addEventListener('loadeddata', fin);
+        setTimeout(fin, 2500);
+      });
+    }
+    const sw = isV ? (c.el.videoWidth || c.w || 1280) : 1280;
+    const sh = isV ? (c.el.videoHeight || c.h || 720) : 720;
+    const th = 96;
+    const tw = Math.max(18, Math.round(th * sw / Math.max(1, sh)));
+    const n = 7;
+    const cv = document.createElement('canvas');
+    cv.width = tw * n;
+    cv.height = th;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    const back = isV ? (c.el.currentTime || 0) : 0;
+    let strip = '';
+    for (let pass = 0; pass < 2 && !strip; pass++) {
+      try {
+        for (let i = 0; i < n; i++) {
+          const t = c.a + (c.b - c.a) * ((i + 0.5) / n);
+          if (isV) {
+            await seekEl(c.el, t);
+            try { cx.drawImage(c.el, i * tw, 0, tw, th); } catch (e) { /* noop */ }
+          } else {
+            paintDemo(t);
+            demoPainted = t;
+            try { cx.drawImage(demoCanvas, i * tw, 0, tw, th); } catch (e) { /* noop */ }
+          }
+        }
+        // 거의 새까맣게 나오면(첫 프레임이 아직 디코드되지 않음) 조금 기다렸다 다시
+        const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+        let sum = 0, cnt = 0;
+        for (let i = 0; i < d.length; i += 397 * 4) { sum += d[i] + d[i + 1] + d[i + 2]; cnt++; }
+        const mean = cnt ? sum / (cnt * 3) : 0;
+        strip = cv.toDataURL('image/jpeg', 0.62);
+        if (isV && mean < 6 && pass === 0) {
+          strip = '';
+          await new Promise(function (r) { setTimeout(r, 450); });
+        }
+      } catch (e) {
+        strip = '';
+        break;
+      }
+    }
+    c.strip = strip || '';
+    if (isV) { try { c.el.currentTime = back; } catch (e) { /* noop */ } }
+    else demoPainted = -1;
+    renderTimeline();
+  }
+
+  function afterClipsChanged() {
+    syncTrimState();
+    updateTrimUI();
+    renderClipUI();
+    renderTimeline();
+    updateSpeedHint();
     updateAutoInfo();
-    resetCuts(true);      // 구간이 바뀌므로 컷 분할도 초기화
-    durProbe = false;
-    clearTimeout(durTimer);
-    mode = 'video';
-    playing = false;
-    video.pause();
-    video.src = objURL;
-    try { video.load(); } catch (e) { /* noop */ }
-    updateSrcInfo(file.name + ' 불러오는 중…');
-    toast('영상을 불러오고 있어요…');
+    updateSrcInfo(sourceSummary());
     dirty = true;
+  }
+
+  function sourceSummary() {
+    const n = S.clips.length;
+    if (!n) return '영상 없음 · 클립을 추가해 주세요';
+    if (n > 1) {
+      return '클립 ' + n + '개 · 전체 ' + fmtTime(totalOut()) + ' · ' + S.clips.map(function (c) { return fmtTime(c.b - c.a); }).join('+');
+    }
+    const c = S.clips[0];
+    if (c.kind === 'demo') return '샘플 데모 영상 · 0:15 · 1280×720';
+    return c.name + ' · ' + fmtTime(c.dur) + (c.w ? ' · ' + c.w + '×' + c.h : '');
+  }
+
+  async function addFiles(files, opts) {
+    opts = opts || {};
+    if (exp) { toast('내보내기 중에는 영상을 바꿀 수 없어요'); return; }
+    const list = Array.from(files || []).filter(looksVideo);
+    if (!list.length) { toast('영상 파일을 선택해 주세요'); return; }
+    const replace = !!opts.replace;
+    if (replace || (S.clips.length === 1 && S.clips[0].kind === 'demo')) clearClips();
+    if (replace) resetCuts(true);
+    S.autocut.analyzed = false;
+    S.autocut.windows = [];
+    updateSrcInfo(list.length > 1 ? list.length + '개 영상 불러오는 중…' : list[0].name + ' 불러오는 중…');
+    toast(list.length > 1 ? list.length + '개 영상을 불러오고 있어요…' : '영상을 불러오고 있어요…');
+    const firstNew = S.clips.length;
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      const url = URL.createObjectURL(file);
+      const c = {
+        id: ++clipSeq, kind: 'video', name: file.name, file: file, url: url, el: null,
+        dur: DEMO_DURATION, a: 0, b: DEMO_DURATION, vol: 100, mute: false,
+        acw: [], strip: '', w: 0, h: 0
+      };
+      c.el = makeVideoEl(c);
+      S.clips.push(c);
+      await loadClipMeta(c);
+      if (S.clips.length === 1) { playIdx = 0; }
+    }
+    invalidateTimeline();
+    setActive(clamp(firstNew, 0, S.clips.length - 1), { force: true });
+    afterClipsChanged();
+    if (audioGraph) { ensureAudioGraph(); applyClipAudio(); }
     updatePlayBtn();
+    // 썸네일 필름스트립은 뒤에서 천천히 채운다
+    (async function () {
+      for (let i = 0; i < S.clips.length; i++) {
+        if (!S.clips[i].strip) await makeStrip(S.clips[i]);
+      }
+      renderTimeline();
+    })();
+  }
+
+  function loadFile(file) {
+    addFiles([file], { replace: true });
   }
 
   function loadDemo() {
     if (exp) { toast('내보내기 중에는 바꿀 수 없어요'); return; }
-    mode = 'demo';
-    playing = false;
-    video.pause();
-    demoAbs = 0;
-    setDuration(DEMO_DURATION);
+    clearClips();
+    S.clips.push(makeDemoClip());
+    S.autocut.windows = [];
+    S.autocut.analyzed = false;
     resetCuts(true);
+    demoAbs = 0;
+    demoPainted = -1;
+    setActive(0, { force: true });
+    afterClipsChanged();
     updateSrcInfo('샘플 데모 영상 · 0:15 · 1280×720');
-    dirty = true;
     updatePlayBtn();
-    toast('샘플 데모를 불러왔어요. ▶ 를 눌러 보세요');
-  }
-
-  function applyLoadedDuration(d) {
-    setDuration(d);
-    video.playbackRate = S.speed;
-    applyPitchToVideo();
-    try { video.currentTime = 0; } catch (e) { /* noop */ }
-    updateSrcInfo(pendingName + ' · ' + fmtTime(d) + ' · ' + video.videoWidth + '×' + video.videoHeight);
     dirty = true;
+    toast('샘플 데모를 불러왔어요. ▶ 를 눌러 보세요');
+    setTimeout(function () { if (!S.clips[0] || !S.clips[0].strip) makeStrip(S.clips[0]); }, 60);
   }
 
-  video.addEventListener('loadedmetadata', function () {
-    if (mode !== 'video') return;
-    const d = video.duration;
-    if (isFinite(d) && d > 0) {
-      applyLoadedDuration(d);
-      return;
-    }
-    // MediaRecorder로 만든 webm 등은 길이가 Infinity/NaN → 끝까지 탐색해 길이를 확정
-    durProbe = true;
-    clearTimeout(durTimer);
-    durTimer = setTimeout(function () {
-      if (durProbe && mode === 'video') {
-        durProbe = false;
-        applyLoadedDuration(DEMO_DURATION);
-        toast('영상 길이 정보를 읽지 못해 15초로 맞췄어요. 구간을 직접 조절해 주세요.');
-      }
-    }, 2500);
-    try { video.currentTime = 1e7; } catch (e) { /* noop */ }
-  });
-
-  video.addEventListener('durationchange', function () {
-    if (mode !== 'video' || !durProbe) return;
-    const d = video.duration;
-    if (isFinite(d) && d > 0) {
-      durProbe = false;
-      clearTimeout(durTimer);
-      applyLoadedDuration(d);
-    }
-  });
-  video.addEventListener('seeked', function () { dirty = true; });
-  video.addEventListener('loadeddata', function () { dirty = true; });
-  video.addEventListener('error', function () {
-    if (mode === 'video') toast('이 영상 형식은 브라우저가 읽지 못해요. mp4(H.264)로 바꿔 보세요.');
-  });
 
   /* ---------------- export ---------------- */
   function supportsExport() {
@@ -2283,20 +2702,6 @@
     }
     return '';
   }
-  function seekVideo(t) {
-    return new Promise(function (resolve) {
-      let done = false;
-      function fin() {
-        if (done) return;
-        done = true;
-        video.removeEventListener('seeked', fin);
-        resolve();
-      }
-      video.addEventListener('seeked', fin);
-      try { video.currentTime = t; } catch (e) { fin(); }
-      setTimeout(fin, 1500);
-    });
-  }
   function stamp() {
     const d = new Date();
     const p = function (n) { return String(n).padStart(2, '0'); };
@@ -2310,11 +2715,11 @@
       toast('이 브라우저는 영상 저장을 지원하지 않아요');
       return;
     }
-    if (mode === 'video' && !video.videoWidth) { toast('영상을 아직 불러오는 중이에요. 잠시 후 다시 시도해 주세요.'); return; }
-    const seg = S.trimEnd - S.trimStart;
-    if (seg < 0.4) { toast('자르기 구간이 0.4초 이상이어야 해요'); return; }
-    const segs = segments();
-    if (keptDuration() < 0.4) { toast('남는 구간이 0.4초도 안 돼요. 무음 기준을 조금 낮춰 주세요'); return; }
+    const waiting = S.clips.some(function (c) { return c.kind === 'video' && !(c.el && c.el.videoWidth); });
+    if (waiting) { toast('영상을 아직 불러오는 중이에요. 잠시 후 다시 시도해 주세요.'); return; }
+    if (keptDuration() < 0.4 || totalOut() < 0.4) {
+      toast('내보낼 길이가 0.4초도 안 돼요. 구간이나 무음 기준을 확인해 주세요'); return;
+    }
 
     const portrait = S.aspect === '9:16';
     const hd = S.quality === '1080';
@@ -2334,7 +2739,7 @@
     let graph = null;
     let hasAudio = false;
     let note = '';
-    const wantsAudio = mode === 'video' || S.bgm.on || (S.sfx.id && S.sfx.id !== 'none');
+    const wantsAudio = S.clips.some(function (c) { return c.kind === 'video'; }) || S.bgm.on || (S.sfx.id && S.sfx.id !== 'none');
     if (wantsAudio) {
       try {
         graph = ensureAudioGraph();
@@ -2372,16 +2777,14 @@
       }
     }
 
-    // prepare playback position
-    video.pause();
+    // 첫 클립의 첫 프레임으로 이동
     playing = false;
-    const firstSrc = segs.length ? segs[0][0] : S.trimStart;
-    if (mode === 'video') {
-      await seekVideo(firstSrc);
-      video.playbackRate = clamp(speedAtSrc(firstSrc), 0.0625, 16);
+    pauseAll();
+    const first = timeline().items[0];
+    gotoClip(0, first && first.segs.length ? first.segs[0][0] : 0);
+    if (mode === 'video' && video) {
+      try { video.playbackRate = clamp(speedAtSrc(srcPos()), 0.0625, 16); } catch (e) { /* noop */ }
       applyPitchToVideo();
-    } else {
-      demoAbs = firstSrc;
     }
 
     const E = {
@@ -2437,10 +2840,11 @@
       scheduleSfx(t0, 0, graph.sfxNodes);
     }
 
-    if (mode === 'video') {
-      try { await video.play(); } catch (e) { /* noop */ }
-    }
     playing = true;
+    const c0 = activeClip();
+    if (c0 && c0.kind === 'video' && c0.el) {
+      try { await c0.el.play(); } catch (e) { /* noop */ }
+    }
     updatePlayBtn();
     dirty = true;
     progressText.textContent = '녹화 중…';
@@ -2449,16 +2853,44 @@
   function updateExportProgress() {
     if (!exp) return;
     const E = exp;
+    // 벽시계 시간을 기준으로 소스 위치를 보정한다.
+    // (무음 건너뛰기가 한 프레임 늦거나, 기계가 바빠 재생이 밀리면 녹화 길이가 늘어난다)
+    if (E.duration > 0.2 && !E.holdStart) {
+      const wall = (performance.now() - E.startedAt) / 1000;
+      const want = Math.min(E.duration, wall);
+      const at = srcAtOut(want);
+      const c = activeClip();
+      if (at.i !== playIdx) {
+        gotoClip(at.i, at.p);
+      } else if (c && c.el && playing) {
+        const segs = clipSegs(c);
+        const cur = c.el.currentTime || 0;
+        const inSeg = segs.some(function (sg) { return cur >= sg[0] - 0.06 && cur <= sg[1] + 0.02; });
+        // 지울 구간(무음)에 들어가 있으면 벽시계에 맞는 위치로 당긴다.
+        // 남는 구간 안에서는 손대지 않아 소리가 끊기지 않는다.
+        if (!inSeg) {
+          try { c.el.currentTime = at.p; } catch (e) { /* noop */ }
+        }
+      }
+    }
     const t = outTime();
+    // 기계가 바빠 프레임이 밀려도 녹화 길이가 늘어나지 않도록 벽시계로 한 번 더 막는다
+    const wall = (performance.now() - E.startedAt) / 1000;
+    if (!E.holdStart && E.duration > 0.2 && wall > E.duration + 0.45) {
+      E.holdStart = performance.now();
+      playing = false;
+      pauseAll();
+      dirty = true;
+    }
     const p = clamp(t / E.duration, 0, 1);
     progressFill.style.width = (p * 100).toFixed(1) + '%';
     progressText.textContent = '녹화 중… ' + Math.round(p * 100) + '% · 남은 ' + fmtTime(Math.max(0, E.duration - t));
-    if (t >= E.duration - 0.02) {
+    if (t >= E.duration - 0.02 || E.holdStart) {
       if (!E.holdStart) {
         // 마지막 프레임을 잠시 붙잡아 인코더가 꼬리를 flush 하도록 한다
         E.holdStart = performance.now();
         playing = false;
-        try { video.pause(); } catch (e) { /* noop */ }
+        pauseAll();
         dirty = true;
       } else if (performance.now() - E.holdStart >= 180) {
         endExport(false);
@@ -2472,7 +2904,7 @@
     E.cancelled = !!cancelled;
     exp = null;
     playing = false;
-    try { video.pause(); } catch (e) { /* noop */ }
+    pauseAll();
     if (E.graph) { try { E.graph.mon.gain.value = 1; } catch (e) { /* noop */ } }
     stopBgm();
     stopSfx();
@@ -2575,6 +3007,14 @@
       },
       webapp: {
         trim: [S.trimStart, S.trimEnd],
+        clips: S.clips.map(function (c, i) {
+          return {
+            index: i, name: c.name, kind: c.kind,
+            trim: [Math.round(c.a * 100) / 100, Math.round(c.b * 100) / 100],
+            vol: c.vol, mute: !!c.mute, out: Math.round((clipOutEnd(i) - clipOutStart(i)) * 100) / 100
+          };
+        }),
+        total_out: Math.round(totalOut() * 100) / 100,
         speed: S.speed,
         autocut: !!S.autocut.on,
         cut_count: cutCount(),
@@ -2635,6 +3075,295 @@
     capNote.textContent = '이 브라우저는 영상 저장을 지원해요. ' + S.aspect + ' · ' + S.quality + 'p ('
       + (S.aspect === '9:16' ? (S.quality === '1080' ? '1080×1920' : '720×1280') : (S.quality === '1080' ? '1920×1080' : '1280×720'))
       + ') 로 저장됩니다.';
+  }
+
+  /* ---------------- 타임라인 UI (3트랙) ----------------
+     1) 필름스트립(클립 썸네일 + 컷 마커 + ＋)
+     2) 오디오 파형(BGM 또는 원음)
+     3) 댓글·자막 구간 바
+     재생선은 출력 시간 위치에 서고, 스크롤이 따라간다. */
+  const tlScrollEl = $('#tlScroll');
+  const tlContentEl = $('#tlContent');
+  const tlRulerEl = $('#tlRuler');
+  const tlFilmEl = $('#tlFilm');
+  const tlWaveEl = $('#tlWave');
+  const tlWaveLabel = $('#tlWaveLabel');
+  const tlOvEl = $('#tlOv');
+  const tlPlayheadEl = $('#tlPlayhead');
+  const tlAddEl = $('#tlAdd');
+
+  let PX_PER_SEC = 36;
+  function readScale() {
+    try {
+      const n = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tl-scale'));
+      if (n > 4) PX_PER_SEC = n;
+    } catch (e) { /* noop */ }
+  }
+  function pxPerSec() { return PX_PER_SEC; }
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m];
+    });
+  }
+  function shortName(n) {
+    n = String(n || '');
+    return n.length > 22 ? n.slice(0, 20) + '…' : n;
+  }
+
+  function renderTimeline() {
+    if (!tlContentEl || !tlScrollEl || !S.clips.length) return;
+    const T = timeline();
+    const scale = pxPerSec();
+    const total = Math.max(0.2, T.total);
+    const need = total * scale + 52;
+    const view = tlScrollEl.clientWidth || 320;
+    tlContentEl.style.width = Math.max(need, view) + 'px';
+    renderRulerUI(total, scale);
+    renderFilmUI(T, scale);
+    renderWaveUI(T, scale);
+    renderOverlayUI(scale);
+    renderCutMarksUI(scale);
+    updatePlayhead(true);
+  }
+
+  function renderRulerUI(total, scale) {
+    if (!tlRulerEl) return;
+    const stepLabel = total > 90 ? 10 : (total > 40 ? 5 : (scale >= 60 ? 1 : 5));
+    let h = '';
+    for (let s = 0; s <= total + 0.001; s += 1) {
+      const x = s * scale;
+      h += '<i class="ruler-tick" style="left:' + x.toFixed(1) + 'px"></i>';
+      if (Math.round(s) % stepLabel === 0) {
+        h += '<span class="ruler-label" style="left:' + x.toFixed(1) + 'px">' + fmtTime(s) + '</span>';
+      }
+    }
+    tlRulerEl.innerHTML = h;
+  }
+
+  function renderFilmUI(T, scale) {
+    if (!tlFilmEl || !tlAddEl) return;
+    Array.from(tlFilmEl.querySelectorAll('.tl-clip')).forEach(function (e) { e.remove(); });
+    let html = '';
+    for (let i = 0; i < T.items.length; i++) {
+      const it = T.items[i];
+      const c = it.c;
+      const w = Math.max(16, it.dur * scale);
+      const bg = c.strip ? "background-image:url('" + c.strip + "');" : '';
+      html += '<div class="tl-clip' + (i === S.selClip ? ' on' : '') + (c.strip ? '' : ' empty') + '"'
+        + ' data-clip="' + i + '" role="listitem" aria-label="클립 ' + (i + 1) + ' ' + escHtml(c.name) + '"'
+        + ' style="width:' + w.toFixed(1) + 'px;' + bg + '">'
+        + '<button type="button" class="tl-mute' + (c.mute ? ' off' : '') + '" data-mute="' + i + '"'
+        + ' aria-label="클립 ' + (i + 1) + ' 소리 ' + (c.mute ? '켜기' : '끄기') + '">' + (c.mute ? '🔇' : '🔊') + '</button>'
+        + '<span class="tl-clip-num">' + (i + 1) + '</span>'
+        + '<span class="tl-clip-name">' + escHtml(shortName(c.name)) + '</span>'
+        + '</div>';
+    }
+    tlAddEl.insertAdjacentHTML('beforebegin', html);
+  }
+
+  // 파형 값(0~1) — BGM이 있으면 BGM, 원음 분석이 있으면 그 값, 둘 다 없으면 잔잔한 표시
+  function wavePeaks(w) {
+    const out = new Float32Array(w);
+    if (S.bgm.on && bgmBuffer) {
+      const d = bgmBuffer.getChannelData(0);
+      const n = d.length || 1;
+      for (let i = 0; i < w; i++) {
+        const s0 = Math.floor(i * n / w);
+        const s1 = Math.max(s0 + 1, Math.min(n, Math.floor((i + 1) * n / w)));
+        let m = 0;
+        for (let j = s0; j < s1; j += 2) {
+          const v = Math.abs(d[j]);
+          if (v > m) m = v;
+        }
+        out[i] = clamp(m * 1.9, 0.03, 1);
+      }
+      return out;
+    }
+    const c = activeClip();
+    if (c && c.acw && c.acw.length) {
+      const n = c.acw.length;
+      for (let i = 0; i < w; i++) {
+        const k = Math.min(n - 1, Math.floor(i / w * n));
+        out[i] = clamp((c.acw[k] + 62) / 62, 0.04, 1);
+      }
+      return out;
+    }
+    for (let i = 0; i < w; i++) {
+      const v = 0.30 + 0.20 * Math.sin(i * 0.19) * Math.sin(i * 0.043) + 0.10 * Math.sin(i * 0.63);
+      out[i] = clamp(v, 0.08, 1);
+    }
+    return out;
+  }
+
+  function renderWaveUI(T, scale) {
+    if (!tlWaveEl) return;
+    const w = Math.max(40, Math.round(Math.max(0.2, T.total) * scale));
+    const h = 34;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    tlWaveEl.style.width = w + 'px';
+    tlWaveEl.width = Math.round(w * dpr);
+    tlWaveEl.height = Math.round(h * dpr);
+    const cx = tlWaveEl.getContext('2d');
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx.clearRect(0, 0, w, h);
+    const peaks = wavePeaks(w);
+    cx.fillStyle = '#3fd6f5';
+    const mid = h / 2;
+    for (let x = 0; x < w; x++) {
+      const a = peaks[Math.min(peaks.length - 1, Math.floor(x / w * peaks.length))] || 0;
+      const bh = Math.max(1.2, a * (h - 6));
+      cx.fillRect(x, mid - bh / 2, 1, bh);
+    }
+    if (tlWaveLabel) {
+      tlWaveLabel.textContent = (S.bgm.on && bgmBuffer && S.bgm.name)
+        ? ('♪ ' + shortName(S.bgm.name))
+        : (activeClip() && activeClip().acw && activeClip().acw.length ? '원음 (분석됨)' : '원음');
+    }
+  }
+
+  function overlayBarText(i) {
+    const co = (S.cutOv && S.cutOv[i]) || null;
+    const ct = co && co.comment ? co.comment.text : S.ov.comment.text;
+    const st = S.ov.sub ? S.ov.sub.text : '';
+    return String(ct || st || ('컷 ' + (i + 1)));
+  }
+
+  function renderOverlayUI(scale) {
+    if (!tlOvEl) return;
+    const n = cutCount();
+    const total = cutTotal();
+    let h = '';
+    for (let i = 0; i < n; i++) {
+      const r = cutRange(i);
+      const x = r[0] * scale;
+      const w = Math.max(8, (r[1] - r[0]) * scale - 2);
+      const txt = overlayBarText(i);
+      h += '<div class="ov-bar' + (i % 2 ? ' alt' : '') + '" data-cut="' + i + '" role="listitem"'
+        + ' title="' + escHtml(txt) + '" style="left:' + x.toFixed(1) + 'px;width:' + w.toFixed(1) + 'px">'
+        + (w > 52 ? escHtml(txt) : '') + '</div>';
+    }
+    tlOvEl.innerHTML = h;
+  }
+
+  function renderCutMarksUI(scale) {
+    Array.from(tlContentEl.querySelectorAll('.cut-mark')).forEach(function (e) { e.remove(); });
+    const pts = cutPoints();
+    for (let i = 0; i < pts.length; i++) {
+      const d = document.createElement('i');
+      d.className = 'cut-mark';
+      d.style.left = (pts[i] * scale).toFixed(1) + 'px';
+      tlContentEl.appendChild(d);
+    }
+  }
+
+  let lastHeadX = -1;
+  function updatePlayhead(autoScroll) {
+    if (!tlPlayheadEl || !tlScrollEl) return;
+    const scale = pxPerSec();
+    const x = clamp(outTime(), 0, Math.max(0.2, totalOut())) * scale;
+    if (Math.abs(x - lastHeadX) > 0.25) {
+      lastHeadX = x;
+      tlPlayheadEl.style.left = x.toFixed(1) + 'px';
+    }
+    const cw = tlScrollEl.clientWidth;
+    if (!cw) return;
+    const left = tlScrollEl.scrollLeft;
+    const outside = (x < left + cw * 0.06) || (x > left + cw * 0.94);
+    if (autoScroll || playing || outside) {
+      const max = Math.max(0, tlScrollEl.scrollWidth - cw);
+      const want = clamp(x - cw / 2, 0, max);
+      if (Math.abs(want - left) > 2) tlScrollEl.scrollLeft = want;
+    }
+  }
+
+  function toggleClipMute(i) {
+    const c = clipAt(i);
+    if (!c) return;
+    c.mute = !c.mute;
+    if (audioGraph) applyClipAudio();
+    renderTimeline();
+    renderClipUI();
+    toast('클립 ' + (i + 1) + (c.mute ? ' 소리를 껐어요' : ' 소리를 켰어요'));
+  }
+
+  function openTab(name) {
+    $$('#tabs .tab').forEach(function (b) {
+      const on = b.dataset.tab === name;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    $$('.panel').forEach(function (p) { p.classList.toggle('on', p.id === 'panel-' + name); });
+    if (name === 'export') setCapabilityNote();
+    if (name === 'audio') renderClipVolUI();
+    // 편집 영역은 자기 안에서 스크롤된다 — 탭을 바꾸면 그 탭의 처음부터 보여 준다
+    const lay = $('.layout');
+    if (lay) lay.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  let scrubbing = false;
+  let scrubMoved = 0;
+  let scrubStartX = 0;
+
+  function tlTimeAt(clientX) {
+    if (!tlContentEl) return 0;
+    const rect = tlContentEl.getBoundingClientRect();
+    return clamp((clientX - rect.left) / pxPerSec(), 0, Math.max(0.2, totalOut()));
+  }
+
+  function bindTimeline() {
+    if (!tlScrollEl) return;
+    tlScrollEl.addEventListener('pointerdown', function (e) {
+      if (e.button != null && e.button !== 0) return;
+      const tgt = e.target;
+      const muteBtn = tgt.closest ? tgt.closest('.tl-mute') : null;
+      const addBtn = tgt.closest ? tgt.closest('.tl-add') : null;
+      const ovBar = tgt.closest ? tgt.closest('.ov-bar') : null;
+      if (muteBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleClipMute(Number(muteBtn.dataset.mute));
+        return;
+      }
+      if (addBtn) return;
+      if (ovBar) {
+        e.preventDefault();
+        openTab('overlay');
+        const i = Number(ovBar.dataset.cut);
+        if (cutCount() > 1) selectCut(i);
+        return;
+      }
+      if (exp || cutScanning) return;
+      scrubbing = true;
+      scrubMoved = 0;
+      scrubStartX = e.clientX;
+      try { tlScrollEl.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+      if (playing) setPlaying(false);
+      seekOut(tlTimeAt(e.clientX));
+      updatePlayhead(true);
+      e.preventDefault();
+    });
+    tlScrollEl.addEventListener('pointermove', function (e) {
+      if (!scrubbing) return;
+      scrubMoved += Math.abs(e.clientX - scrubStartX);
+      scrubStartX = e.clientX;
+      seekOut(tlTimeAt(e.clientX));
+      updatePlayhead(true);
+      e.preventDefault();
+    });
+    const stopScrub = function () { scrubbing = false; };
+    tlScrollEl.addEventListener('pointerup', stopScrub);
+    tlScrollEl.addEventListener('pointercancel', stopScrub);
+
+    const waveTrack = $('#tlWaveTrack');
+    if (waveTrack) {
+      waveTrack.addEventListener('click', function () {
+        if (scrubMoved > 6) return;
+        openTab('audio');
+      });
+      waveTrack.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openTab('audio'); }
+      });
+    }
   }
 
   /* ---------------- ui sync ---------------- */
@@ -2705,12 +3434,15 @@
     // 0.01 단위 그대로 보관한다(1.02x = 1.02). 반올림은 0.01 자리까지만.
     const n = clamp(Math.round((Number(v) || 1) * 100) / 100, 0.5, 2);
     S.speed = n;
-    if (mode === 'video') {
-      try { video.playbackRate = clamp(speedAtSrc(srcPos()), 0.0625, 16); } catch (e) { /* noop */ }
+    const c = activeClip();
+    if (c && c.kind === 'video' && c.el) {
+      try { c.el.playbackRate = clamp(speedAtSrc(srcPos()), 0.0625, 16); } catch (e) { /* noop */ }
     }
+    invalidateTimeline();
     syncSegs();
     speedChip.textContent = speedLabel(n);
     updateSpeedHint();
+    renderTimeline();
     dirty = true;
   }
 
@@ -2719,8 +3451,9 @@
     const el = $('#acInfo');
     if (!el) return;
     const a = S.autocut;
-    if (!a.windows.length) {
-      el.textContent = mode === 'video'
+    const has = S.clips.some(function (c) { return c.acw && c.acw.length; });
+    if (!has) {
+      el.textContent = S.clips.some(function (c) { return c.kind === 'video'; })
         ? '영상을 불러왔어요. ‘무음 분석’을 누르면 말이 없는 구간을 찾습니다.'
         : '영상을 선택한 뒤 무음 분석을 눌러 주세요. (샘플 데모에는 소리가 없어요)';
       el.className = 'hint';
@@ -2735,40 +3468,55 @@
     updateSpeedHint();
   }
 
+  // 모든 클립의 소리를 한 번에 분석해 클립별 무음 구간(c.acw)을 채운다
   function analyzeSilence() {
     const a = S.autocut;
-    if (mode !== 'video' || !srcFile) { toast('먼저 영상을 선택해 주세요'); return Promise.resolve(); }
+    const targets = S.clips.filter(function (c) { return c.kind === 'video' && c.file; });
+    if (!targets.length) {
+      toast(S.clips.some(function (c) { return c.kind === 'video'; })
+        ? '영상 소리를 아직 읽을 수 없어요. 잠시 후 다시 시도해 주세요'
+        : '영상을 선택한 뒤 무음 분석을 눌러 주세요 (샘플 데모에는 소리가 없어요)');
+      return Promise.resolve();
+    }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) { toast('이 브라우저는 무음 분석을 지원하지 않아요'); return Promise.resolve(); }
-    toast('소리를 분석하는 중이에요…');
-    const file = srcFile;
-    return file.arrayBuffer().then(function (buf) {
-      const ac = new AC();
-      return ac.decodeAudioData(buf).then(function (ab) {
-        const data = ab.getChannelData(0);
-        const hop = 0.02;
-        const n = Math.max(1, Math.floor(hop * ab.sampleRate));
-        const w = [];
-        for (let i = 0; i + n <= data.length; i += n) {
-          let sum = 0;
-          for (let j = 0; j < n; j++) sum += data[i + j] * data[i + j];
-          w.push(20 * Math.log10(Math.sqrt(sum / n) + 1e-8));
+    toast('소리를 분석하는 중이에요… (클립 ' + targets.length + '개)');
+    const ac = new AC();
+    const hop = 0.02;
+    return (async function () {
+      let ok = 0;
+      for (let i = 0; i < targets.length; i++) {
+        const c = targets[i];
+        try {
+          const buf = await c.file.arrayBuffer();
+          const ab = await ac.decodeAudioData(buf);
+          const data = ab.getChannelData(0);
+          const n = Math.max(1, Math.floor(hop * ab.sampleRate));
+          const w = [];
+          for (let k = 0; k + n <= data.length; k += n) {
+            let sum = 0;
+            for (let j = 0; j < n; j++) sum += data[k + j] * data[k + j];
+            w.push(20 * Math.log10(Math.sqrt(sum / n) + 1e-8));
+          }
+          c.acw = w;
+          ok++;
+        } catch (e) {
+          c.acw = [];
         }
-        a.windows = w;
-        a.analyzed = true;
-        computeCuts();
-        updateAutoInfo();
-        dirty = true;
-        try { ac.close(); } catch (e) { /* noop */ }
-        const st = cutStats();
-        toast('무음 ' + st.count + '곳을 찾았어요 (' + st.removed.toFixed(1) + '초)');
-      }).catch(function () {
-        try { ac.close(); } catch (e) { /* noop */ }
-        toast('이 영상의 소리를 읽지 못했어요 (무음 트랙이거나 지원 밖 형식)');
-      });
-    }).catch(function () {
-      toast('영상 파일을 다시 선택해 주세요');
-    });
+      }
+      a.analyzed = ok > 0;
+      const cur = activeClip();
+      a.windows = (cur && cur.acw) ? cur.acw : [];
+      invalidateTimeline();
+      updateAutoInfo();
+      renderTimeline();
+      dirty = true;
+      try { ac.close(); } catch (e) { /* noop */ }
+      const st = cutStats();
+      if (ok) toast('무음 ' + st.count + '곳을 찾았어요 (' + st.removed.toFixed(1) + '초)');
+      else toast('이 영상의 소리를 읽지 못했어요 (무음 트랙이거나 지원 밖 형식)');
+      return ok;
+    })();
   }
 
   function loadBgmFile(file) {
@@ -2786,10 +3534,114 @@
       const el = $('#bgmName');
       if (el) el.textContent = file.name + ' · ' + fmtSec1(ab.duration);
       applyAudioLevels();
+      renderTimeline();
       toast('배경음악을 불러왔어요 (' + fmtSec1(ab.duration) + ')');
     }).catch(function () {
       toast('이 오디오 파일은 읽지 못했어요 (mp3·m4a·wav·ogg)');
     });
+  }
+
+  /* ---------------- 클립 목록 UI ---------------- */
+  function renderClipUI() {
+    const list = $('#clipList');
+    const tag = $('#clipCountTag');
+    if (tag) tag.textContent = S.clips.length + '개';
+    if (!list) return;
+    if (!S.clips.length) { list.innerHTML = '<p class="hint">클립이 없습니다. 영상을 추가해 주세요.</p>'; return; }
+    let h = '';
+    S.clips.forEach(function (c, i) {
+      h += '<div class="clip-row' + (i === S.selClip ? ' on' : '') + '" data-ci="' + i + '">'
+        + '<span class="num">' + (i + 1) + '</span>'
+        + '<span class="nm">' + escHtml(c.name) + '</span>'
+        + '<span class="du">' + fmtSec1(c.b - c.a) + '</span>'
+        + '<button type="button" data-act="up" data-ci="' + i + '" aria-label="클립 ' + (i + 1) + ' 위로"' + (i === 0 ? ' disabled' : '') + '>↑</button>'
+        + '<button type="button" data-act="down" data-ci="' + i + '" aria-label="클립 ' + (i + 1) + ' 아래로"' + (i === S.clips.length - 1 ? ' disabled' : '') + '>↓</button>'
+        + '<button type="button" data-act="del" data-ci="' + i + '" class="del" aria-label="클립 ' + (i + 1) + ' 삭제">✕</button>'
+        + '</div>';
+    });
+    list.innerHTML = h;
+    renderClipVolUI();
+  }
+
+  function renderClipVolUI() {
+    const box = $('#clipVolList');
+    const tag = $('#clipAudioTag');
+    if (tag) tag.textContent = S.clips.length + '개';
+    if (!box) return;
+    if (!S.clips.length) { box.innerHTML = '<p class="hint">클립이 없습니다.</p>'; return; }
+    let h = '';
+    S.clips.forEach(function (c, i) {
+      const v = c.vol == null ? 100 : c.vol;
+      h += '<div class="vol-row' + (i === S.selClip ? ' on' : '') + '">'
+        + '<span class="nm">' + (i + 1) + '. ' + escHtml(shortName(c.name)) + '</span>'
+        + '<input type="range" min="0" max="150" step="1" value="' + v + '" data-vol="' + i + '" aria-label="클립 ' + (i + 1) + ' 소리 크기">'
+        + '<span class="out">' + (c.mute ? 'OFF' : v + '%') + '</span>'
+        + '</div>';
+    });
+    box.innerHTML = h;
+  }
+
+  function selectClip(i) {
+    setActive(i, { force: true });
+    seekOut(clipOutStart(clamp(i, 0, S.clips.length - 1)) + 0.001);
+    updateTrimUI();
+    renderClipUI();
+    renderTimeline();
+    dirty = true;
+  }
+
+  function moveClip(i, dir) {
+    const j = i + dir;
+    if (i < 0 || i >= S.clips.length || j < 0 || j >= S.clips.length) return;
+    const a = S.clips[i];
+    S.clips[i] = S.clips[j];
+    S.clips[j] = a;
+    invalidateTimeline();
+    playIdx = j;
+    S.selClip = j;
+    syncTrimState();
+    afterClipsChanged();
+    renderCutUI();
+    toast('클립 순서를 바꿨어요');
+  }
+
+  function reverseClips() {
+    if (S.clips.length < 2) { toast('클립이 2개 이상일 때 쓸 수 있어요'); return; }
+    S.clips.reverse();
+    invalidateTimeline();
+    playIdx = 0;
+    S.selClip = 0;
+    syncTrimState();
+    afterClipsChanged();
+    renderCutUI();
+    toast('클립 순서를 뒤집었어요');
+  }
+
+  function removeClip(i) {
+    if (S.clips.length <= 1) {
+      toast('클립이 하나뿐이에요. 다른 영상을 넣거나 샘플 데모로 바꿔 주세요');
+      return;
+    }
+    const c = S.clips[i];
+    if (!c) return;
+    pauseAll();
+    if (audioGraph && audioGraph.mediaSrc[c.id]) {
+      const m = audioGraph.mediaSrc[c.id];
+      try { m.node.disconnect(); m.gain.disconnect(); } catch (e) { /* noop */ }
+      delete audioGraph.mediaSrc[c.id];
+    }
+    if (c.el) {
+      c.el.removeAttribute('src');
+      try { c.el.load(); } catch (e) { /* noop */ }
+      try { c.el.remove(); } catch (e) { /* noop */ }
+    }
+    if (c.url) { try { URL.revokeObjectURL(c.url); } catch (e) { /* noop */ } }
+    S.clips.splice(i, 1);
+    invalidateTimeline();
+    setActive(clamp(i, 0, S.clips.length - 1), { force: true });
+    afterClipsChanged();
+    renderCutUI();
+    toast('클립을 지웠어요 · ' + S.clips.length + '개');
   }
 
   /* ---------------- bindings ---------------- */
@@ -2807,7 +3659,10 @@
         }
         // 댓글 카드·코너 라벨은 컷이 2개 이상이면 지금 고른 컷에 같이 저장한다
         if (path.indexOf('ov.comment.') === 0 || path.indexOf('ov.corner.') === 0) saveCutOverlay();
+        if (path.indexOf('audio.') === 0 || path.indexOf('bgm.vol') === 0) applyAudioLevels();
         dirty = true;
+        if (path === 'bgm.vol') renderTimeline();
+        if (path.indexOf('ov.') === 0) renderOverlayUI(pxPerSec());
       });
       if (isCheck) {
         el.addEventListener('change', function () { dirty = true; });
@@ -2815,13 +3670,9 @@
       }
     });
 
-    // tabs
+    // 하단 독 탭
     $$('#tabs .tab').forEach(function (b) {
-      b.addEventListener('click', function () {
-        $$('#tabs .tab').forEach(function (x) { x.classList.toggle('on', x === b); });
-        $$('.panel').forEach(function (p) { p.classList.toggle('on', p.id === 'panel-' + b.dataset.tab); });
-        if (b.dataset.tab === 'export') setCapabilityNote();
-      });
+      b.addEventListener('click', function () { openTab(b.dataset.tab); });
     });
 
     // play / seek
@@ -2829,28 +3680,36 @@
     timebar.addEventListener('pointerdown', function (e) {
       const r = timebar.getBoundingClientRect();
       const frac = clamp((e.clientX - r.left) / r.width, 0, 1);
-      seekTo(S.trimStart + (S.trimEnd - S.trimStart) * frac);
+      seekOut(totalOut() * frac);
+      updatePlayhead(true);
     });
     timebar.addEventListener('keydown', function (e) {
       const step = e.shiftKey ? 5 : 1;
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
-        seekTo(srcPos() + (e.key === 'ArrowLeft' ? -step : step));
+        seekOut(outTime() + (e.key === 'ArrowLeft' ? -step : step));
       }
     });
 
     // files
-    ['fileInput', 'fileInputTop'].forEach(function (id) {
-      const el = document.getElementById(id);
+    const fIn = $('#fileInput');
+    if (fIn) fIn.addEventListener('change', function (e) {
+      const fs = e.target.files;
+      if (fs && fs.length) addFiles(fs, { replace: true });
+      try { e.target.value = ''; } catch (err) { /* noop */ }
+    });
+    ['#fileAddClips', '#fileAddClipsPanel'].forEach(function (sel) {
+      const el = $(sel);
       if (el) el.addEventListener('change', function (e) {
-        const f = e.target.files && e.target.files[0];
-        if (f) loadFile(f);
+        const fs = e.target.files;
+        if (fs && fs.length) addFiles(fs, { replace: false });
         try { e.target.value = ''; } catch (err) { /* noop */ }
       });
     });
     $('#btnDemo').addEventListener('click', loadDemo);
     $('#btnDemo2').addEventListener('click', loadDemo);
-    $('#btnSafe').addEventListener('click', function () {
+    const btnSafe = $('#btnSafe');
+    if (btnSafe) btnSafe.addEventListener('click', function () {
       S.safe = !S.safe;
       const box = $('input[data-bind="safe"]');
       if (box) box.checked = S.safe;
@@ -2858,30 +3717,79 @@
       dirty = true;
     });
 
+    // 클립 목록
+    const clipListEl = $('#clipList');
+    if (clipListEl) clipListEl.addEventListener('click', function (e) {
+      const btn = e.target.closest('button[data-act]');
+      if (btn) {
+        const i = Number(btn.dataset.ci);
+        if (btn.dataset.act === 'up') moveClip(i, -1);
+        else if (btn.dataset.act === 'down') moveClip(i, 1);
+        else removeClip(i);
+        return;
+      }
+      const row = e.target.closest('.clip-row');
+      if (row) selectClip(Number(row.dataset.ci));
+    });
+    const revBtn = $('#btnClipReverse');
+    if (revBtn) revBtn.addEventListener('click', reverseClips);
+
+    // 클립별 볼륨
+    const volBox = $('#clipVolList');
+    if (volBox) volBox.addEventListener('input', function (e) {
+      const el = e.target.closest('input[data-vol]');
+      if (!el) return;
+      const c = clipAt(Number(el.dataset.vol));
+      if (!c) return;
+      c.vol = Number(el.value);
+      const out = el.parentElement ? el.parentElement.querySelector('.out') : null;
+      if (out) out.textContent = c.mute ? 'OFF' : c.vol + '%';
+      if (audioGraph) applyClipAudio();
+      dirty = true;
+    });
+
     // trim
     trimStartEl.addEventListener('input', function () {
+      const c = activeClip();
+      if (!c) return;
       let v = Number(trimStartEl.value);
-      if (v > S.trimEnd - 0.4) v = Math.max(0, S.trimEnd - 0.4);
-      S.trimStart = v;
+      if (v > c.b - 0.4) v = Math.max(0, c.b - 0.4);
+      c.a = clamp(v, 0, Math.max(0, c.b - 0.4));
+      invalidateTimeline();
       updateTrimUI();
       applyTrimToSource();
+      renderTimeline();
+      updateSpeedHint();
     });
     trimEndEl.addEventListener('input', function () {
+      const c = activeClip();
+      if (!c) return;
       let v = Number(trimEndEl.value);
-      if (v < S.trimStart + 0.4) v = Math.min(sourceDur, S.trimStart + 0.4);
-      S.trimEnd = v;
+      if (v < c.a + 0.4) v = Math.min(c.dur, c.a + 0.4);
+      c.b = clamp(v, c.a + 0.4, c.dur);
+      invalidateTimeline();
       updateTrimUI();
       applyTrimToSource();
+      renderTimeline();
+      updateSpeedHint();
     });
     $('#btnFullRange').addEventListener('click', function () {
-      S.trimStart = 0;
-      S.trimEnd = sourceDur;
+      const c = activeClip();
+      if (!c) return;
+      c.a = 0;
+      c.b = c.dur;
+      invalidateTimeline();
       updateTrimUI();
+      renderTimeline();
       dirty = true;
     });
     $('#btnTrimToNow').addEventListener('click', function () {
-      S.trimStart = clamp(srcPos(), 0, Math.max(0, S.trimEnd - 0.4));
+      const c = activeClip();
+      if (!c) return;
+      c.a = clamp(srcPos(), 0, Math.max(0, c.b - 0.4));
+      invalidateTimeline();
       updateTrimUI();
+      renderTimeline();
       dirty = true;
     });
 
@@ -2890,24 +3798,25 @@
     if (acThr) acThr.addEventListener('input', function () {
       S.autocut.thr = Number(acThr.value);
       $('#outAcThr').textContent = S.autocut.thr + ' dB';
-      computeCuts(); updateAutoInfo(); dirty = true;
+      invalidateTimeline(); updateAutoInfo(); renderTimeline(); dirty = true;
     });
     if (acMin) acMin.addEventListener('input', function () {
       S.autocut.minSil = Number(acMin.value);
       $('#outAcMin').textContent = Number(acMin.value).toFixed(2) + '초';
-      computeCuts(); updateAutoInfo(); dirty = true;
+      invalidateTimeline(); updateAutoInfo(); renderTimeline(); dirty = true;
     });
     const acOn = $('input[data-bind="autocut.on"]');
     if (acOn) acOn.addEventListener('change', function () {
       S.autocut.on = acOn.checked;
       if (acOn.checked && !S.autocut.analyzed) {
-        analyzeSilence().then(function () { computeCuts(); updateAutoInfo(); dirty = true; });
+        analyzeSilence().then(function () { invalidateTimeline(); updateAutoInfo(); renderTimeline(); dirty = true; });
       }
-      computeCuts();
+      invalidateTimeline();
       updateAutoInfo();
-      if (S.autocut.on && cutRuns.length) {
-        const segs = segments();
-        if (segs.length) { try { video.currentTime = segs[0][0]; } catch (e) { /* noop */ } }
+      renderTimeline();
+      if (S.autocut.on) {
+        const segs = clipSegs(activeClip());
+        if (segs.length) seekClipSrc(playIdx, segs[0][0]);
       }
       dirty = true;
     });
@@ -2918,11 +3827,13 @@
     const btnCutAdd = $('#btnCutAdd');
     if (btnCutAdd) btnCutAdd.addEventListener('click', function () {
       if (addCutPoint(outTime())) {
-        toast(cutCount() + '컷으로 나눴어요 · 오버레이 탭에서 컷별 댓글 카드를 넣을 수 있어요');
+        toast(cutCount() + '컷으로 나눴어요 · 텍스트 탭에서 컷별 댓글 카드를 넣을 수 있어요');
       }
     });
     const btnCutClear = $('#btnCutClear');
     if (btnCutClear) btnCutClear.addEventListener('click', function () { resetCuts(false); });
+    const btnCutUndo = $('#btnCutUndo');
+    if (btnCutUndo) btnCutUndo.addEventListener('click', undoCutSplit);
     $$('#segCutEvery .chip').forEach(function (b) {
       b.addEventListener('click', function () { applyEvenSplit(Number(b.dataset.v)); });
     });
@@ -2938,21 +3849,23 @@
       if (o) o.textContent = S.cut.step.toFixed(2) + '초';
     });
     if (btnSceneScan) btnSceneScan.addEventListener('click', function () { scanScenes(); });
-    if (btnSceneApply) btnSceneApply.addEventListener('click', function () { applyFoundCuts(); });
     const btnCopyCut = $('#btnCopyCut');
     if (btnCopyCut) btnCopyCut.addEventListener('click', copyCutToAll);
 
     // 오디오 · 페이드 · BGM
     const audVol = $('#audVol');
     if (audVol) audVol.addEventListener('input', function () { S.audio.vol = Number(audVol.value); applyAudioLevels(); });
-    ['in', 'out'].forEach(function (k) {
-      const seg = $('#segFade' + (k === 'in' ? 'In' : 'Out'));
+    [
+      { id: 'segFadeIn', key: 'fadeIn' },
+      { id: 'segFadeOut', key: 'fadeOut' }
+    ].forEach(function (f) {
+      const seg = $('#' + f.id);
       if (!seg) return;
-      $$('#segFade' + (k === 'in' ? 'In' : 'Out') + ' button').forEach(function (b) {
+      $$('#' + f.id + ' button').forEach(function (b) {
         b.addEventListener('click', function () {
-          if (k === 'in') S.audio.fadeIn = Number(b.dataset.v);
-          else S.audio.fadeOut = Number(b.dataset.v);
-          syncSegs(); dirty = true;
+          S.audio[f.key] = Number(b.dataset.v);
+          syncSegs();
+          dirty = true;
         });
       });
     });
@@ -2963,6 +3876,7 @@
       if (!S.bgm.on) stopBgm();
       else if (playing) { const g = ensureAudioGraph(); if (g) startBgm(g.ctx.currentTime + 0.03); }
       if (S.bgm.on && !bgmBuffer) toast('BGM 파일을 먼저 추가해 주세요');
+      renderTimeline();
     });
     const bgmVol = $('#bgmVol');
     if (bgmVol) bgmVol.addEventListener('input', function () { S.bgm.vol = Number(bgmVol.value); applyAudioLevels(); });
@@ -2978,7 +3892,9 @@
       b.addEventListener('click', function () {
         S.speedRamp.mode = b.dataset.v;
         syncSegs();
+        invalidateTimeline();
         updateSpeedHint();
+        renderTimeline();
         dirty = true;
       });
     });
@@ -2987,13 +3903,13 @@
       S.speedRamp.strength = Number(rampStrength.value);
       const o = $('#outRampStrength');
       if (o) o.textContent = S.speedRamp.strength + '%';
-      updateSpeedHint(); dirty = true;
+      invalidateTimeline(); updateSpeedHint(); renderTimeline(); dirty = true;
     });
     if (rampSpan) rampSpan.addEventListener('input', function () {
       S.speedRamp.span = Number(rampSpan.value);
       const o = $('#outRampSpan');
       if (o) o.textContent = S.speedRamp.span + '%';
-      updateSpeedHint(); dirty = true;
+      invalidateTimeline(); updateSpeedHint(); renderTimeline(); dirty = true;
     });
 
     // 피치 · 노이즈 제거 · 오토 레벨링 · 오토더킹
@@ -3073,6 +3989,7 @@
         S.aspect = b.dataset.aspect;
         applyAspect();
         syncSegs();
+        renderTimeline();
       });
     });
     $$('#segQuality button').forEach(function (b) {
@@ -3146,7 +4063,10 @@
 
     // help modal
     const help = $('#helpModal');
-    $('#btnHelp').addEventListener('click', function () { help.hidden = false; });
+    ['#btnHelp', '#btnHelpTop'].forEach(function (sel) {
+      const b = $(sel);
+      if (b) b.addEventListener('click', function () { help.hidden = false; });
+    });
     $('#btnCloseHelp').addEventListener('click', function () { help.hidden = true; });
     help.addEventListener('click', function (e) { if (e.target === help) help.hidden = true; });
 
@@ -3157,25 +4077,41 @@
         e.preventDefault();
         setPlaying(!playing);
       }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (e.target.tagName === 'BODY') {
+          e.preventDefault();
+          seekOut(outTime() + (e.key === 'ArrowLeft' ? -1 : 1));
+        }
+      }
     });
-    window.addEventListener('resize', function () { dirty = true; });
+    window.addEventListener('resize', function () { readScale(); renderTimeline(); dirty = true; });
+
+    bindTimeline();
   }
 
   /* ---------------- init ---------------- */
   function init() {
+    readScale();
     applyAspect();
     buildBindings();
-    mode = 'demo';
+    S.clips = [makeDemoClip()];
+    playIdx = 0;
+    S.selClip = 0;
     demoAbs = 0;
-    setDuration(DEMO_DURATION);
+    setActive(0, { force: true });
     syncUI();
     renderCutUI();
+    afterClipsChanged();
     updateSrcInfo('샘플 데모 영상 · 0:15 · 1280×720');
     setCapabilityNote();
     updatePlayBtn();
     updateAutoInfo();
     paintDemo(0);
     dirty = true;
+    renderTimeline();
+    setTimeout(function () {
+      if (S.clips[0] && !S.clips[0].strip) makeStrip(S.clips[0]);
+    }, 150);
     requestAnimationFrame(tick);
 
     // 테스트·디버깅용 읽기 전용 상태 창
@@ -3185,6 +4121,52 @@
       totalOut: function () { return totalOut(); },
       cutStats: function () { return cutStats(); },
       fontFamily: function () { return fontFamily(); },
+      clips: function () {
+        const T = timeline();
+        return {
+          count: S.clips.length,
+          sel: S.selClip,
+          total: T.total,
+          items: T.items.map(function (it, i) {
+            return {
+              i: i, name: it.c.name, kind: it.c.kind, dur: it.c.dur, a: it.c.a, b: it.c.b,
+              vol: it.c.vol, mute: !!it.c.mute, out: it.dur, start: T.cum[i],
+              stripped: !!it.c.strip, segs: it.segs.length
+            };
+          })
+        };
+      },
+      playhead: function () {
+        const at = srcAtOut(outTime());
+        return { out: outTime(), total: totalOut(), clip: at.i, src: at.p, playing: playing };
+      },
+      seekOut: function (t) { seekOut(Number(t) || 0); return outTime(); },
+      trackInfo: function () {
+        return {
+          film: document.querySelectorAll('#tlFilm .tl-clip').length,
+          plus: !!document.querySelector('#tlAdd'),
+          waveW: (function () { const c = document.querySelector('#tlWave'); return c ? c.width : 0; })(),
+          ovBars: document.querySelectorAll('#tlOv .ov-bar').length,
+          cutMarks: document.querySelectorAll('#tlContent .cut-mark').length,
+          playheadX: (function () {
+            const p = document.querySelector('#tlPlayhead');
+            return p ? Math.round(parseFloat(p.style.left || '0')) : -1;
+          })(),
+          contentW: (function () { const e = document.querySelector('#tlContent'); return e ? Math.round(e.getBoundingClientRect().width) : 0; })()
+        };
+      },
+      sticky: function () {
+        const st = document.querySelector('#studio');
+        const dock = document.querySelector('#tabs');
+        if (!st || !dock) return null;
+        const r = st.getBoundingClientRect();
+        const d = dock.getBoundingClientRect();
+        return {
+          studioTop: Math.round(r.top), studioBottom: Math.round(r.bottom), studioH: Math.round(r.height),
+          dockTop: Math.round(d.top), dockH: Math.round(d.height), ih: window.innerHeight,
+          position: getComputedStyle(st).position, dockPos: getComputedStyle(dock).position
+        };
+      },
       motion: function () {
         return {
           loaded: !!KM,
@@ -3197,11 +4179,12 @@
         };
       },
       job: function () { return buildJob(); },
-      // ----- 컷(씬) 분할 디버그/테스트용 -----
+      // ----- 컷(씬) 분할 -----
       cut: function () {
         return {
           count: cutCount(), pts: cutPoints(), sel: S.cutSel, every: S.cut.every,
           found: (S.cut.found || []).slice(), scanning: cutScanning,
+          undo: !!cutUndo,
           ranges: (function () { const r = []; for (let i = 0; i < cutCount(); i++) r.push(cutRange(i)); return r; })(),
           overlayCount: S.cutOv.length
         };
@@ -3214,6 +4197,7 @@
       addCut: function (t) { return addCutPoint(t === undefined ? outTime() : Number(t)); },
       evenSplit: function (s) { return applyEvenSplit(s); },
       resetCuts: function () { resetCuts(true); },
+      undoCut: function () { return undoCutSplit(); },
       selectCut: function (i) { selectCut(Number(i)); },
       scanScenes: function () { return scanScenes(); },
       applyFoundCuts: function () { return applyFoundCuts(); },
@@ -3238,18 +4222,37 @@
         dirty = true;
         return hsh;
       },
+      // 특정 출력 시간의 '원본 프레임' 평균 색(다중 클립 이어붙이기 확인용)
+      frameColor: function (t) {
+        const tt = clamp(Number(t) || 0, 0, Math.max(0.001, totalOut() - 0.001));
+        const at = srcAtOut(tt);
+        const el = S.clips[at.i] && S.clips[at.i].el;
+        if (el) { try { el.currentTime = at.p; } catch (e) { /* noop */ } }
+        else { paintDemo(at.p); demoPainted = at.p; }
+        const c = document.createElement('canvas');
+        c.width = 32; c.height = 32;
+        const cx = c.getContext('2d', { willReadFrequently: true });
+        cx.drawImage(el || demoCanvas, 0, 0, 32, 32);
+        const d = cx.getImageData(0, 0, 32, 32).data;
+        let r = 0, g = 0, b = 0;
+        for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+        const n = d.length / 4;
+        return { clip: at.i, src: at.p, rgb: [Math.round(r / n), Math.round(g / n), Math.round(b / n)] };
+      },
       rampTime: function (t) { return rampTime(t); },
       rampState: function () {
-        const st = rampState();
-        return { total: st.total, flat: st.flat, cum: st.cum.map(function (v) { return Math.round(v * 1000) / 1000; }), segs: st.segs };
+        const st = timeline();
+        return { total: st.total, flat: st.flat, cum: st.cum.map(function (v) { return Math.round(v * 1000) / 1000; }), segs: segments() };
       },
-      speedAt: function (u) { return speedAt(u); },      speedAtSrc: function (p) { return speedAtSrc(p === undefined ? srcPos() : p); },
+      speedAt: function (u) { return speedAt(u); },
+      speedAtSrc: function (p) { return speedAtSrc(p === undefined ? srcPos() : p); },
       outTime: function () { return outTime(); },
       audioProbe: function (opts) { return audioProbe(opts); },
       updateDuck: function () { updateDuck(); },
       audioState: function () {
         if (!audioGraph) return { graph: false, bgmLoaded: !!bgmBuffer };
         const g = audioGraph;
+        const cl = activeClip();
         return {
           graph: true, state: g.ctx.state,
           orig: g.origGain.gain.value,
@@ -3267,8 +4270,9 @@
           agcGain: g.agcGain ? g.agcGain.gain.value : null,
           agcTarget: g.agcTarget == null ? null : g.agcTarget,
           pitchLock: !!S.pitch.lock,
-          videoPreservesPitch: (typeof video.preservesPitch === 'boolean') ? video.preservesPitch : null,
-          videoRate: video.playbackRate
+          videoPreservesPitch: (cl && cl.el && typeof cl.el.preservesPitch === 'boolean') ? cl.el.preservesPitch : null,
+          videoRate: (cl && cl.el) ? cl.el.playbackRate : null,
+          clipGains: Object.keys(g.mediaSrc || {}).length
         };
       }
     };
