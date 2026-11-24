@@ -49,6 +49,10 @@
     level: { on: false, strength: 55 },
     duck: { on: false, depth: 32 },
     autocut: { on: false, thr: -38, minSil: 0.4, analyzed: false, windows: [], hop: 0.02 },
+    // 컷(씬) 분할 — 분할점은 결과(출력) 영상 시간 기준. 컷마다 댓글 카드·코너 라벨을 따로 둔다.
+    cut: { pts: [], every: 0, sens: 55, step: 0.3, found: [] },
+    cutOv: [],     // 컷이 2개 이상일 때만 쓰는 컷별 오버레이(0번은 S.ov 값의 복사본)
+    cutSel: 0,     // 오버레이 탭에서 편집 중인 컷
     ov: {
       title: { on: true, badge: 'HOT', badgeColor: '#ff2d55', title: '이 장면 하나로', hl: '난리 났다', hlColor: '#ffe14d' },
       comment: { on: true, user: 'daily_kpop', hearts: '1.2만', text: '소름 돋았어요 이건 진짜', hl: '소름' },
@@ -101,6 +105,15 @@
   const dlLink = $('#dlLink');
   const resultMeta = $('#resultMeta');
   const toastEl = $('#toast');
+  // 컷(씬) 분할 UI
+  const cutListEl = $('#cutList');
+  const cutNowEl = $('#cutNow');
+  const cutCountTag = $('#cutCountTag');
+  const cutOverlayCard = $('#cutOverlayCard');
+  const cutChips = $('#cutChips');
+  const sceneInfoEl = $('#sceneInfo');
+  const btnSceneScan = $('#btnSceneScan');
+  const btnSceneApply = $('#btnSceneApply');
 
   /* ---------------- source ---------------- */
   const video = document.createElement('video');
@@ -394,9 +407,8 @@
   }
 
   // 소스 시간 → 출력 시간 (표 기준)
-  function outTime() {
+  function outTimeAt(p) {
     const st = rampState();
-    const p = srcPos();
     for (let i = 0; i < st.segs.length; i++) {
       const a = st.segs[i][0], b = st.segs[i][1];
       if (p < a) return st.cum[i];
@@ -406,6 +418,10 @@
       }
     }
     return st.total;
+  }
+
+  function outTime() {
+    return outTimeAt(srcPos());
   }
 
   // 출력 시간 → 소스 시간 (내보내기 녹화·자막 큐가 쓰는 역함수)
@@ -469,6 +485,408 @@
     if (fi > 0 && t < fi) a = Math.max(a, 1 - t / fi);
     if (fo > 0 && total > 0 && t > total - fo) a = Math.max(a, (t - (total - fo)) / fo);
     return clamp(a, 0, 1);
+  }
+
+  /* ---------------- 컷(씬) 분할 --------------
+     분할점은 '결과(출력) 영상' 시간으로 저장한다. 미리보기·내보내기가 같은
+     drawScene(t) 를 쓰기 때문에, t 가 속한 컷만 찾으면 화면과 녹화가 같이 맞는다. */
+  const CUT_GAP = 0.25;            // 분할점 사이·양 끝과의 최소 간격(초)
+  const SCENE_DEFAULT = '영상을 불러온 뒤 ‘장면 전환 감지’를 누르면 화면이 확 바뀌는 지점을 찾습니다.';
+  let cutScanning = false;
+  let sceneMsg = SCENE_DEFAULT;
+  let sceneCls = '';
+
+  function cutTotal() {
+    return Math.max(0.2, totalOut());
+  }
+
+  // 정렬·중복 제거된 분할점(양 끝은 제외)
+  function cutPoints() {
+    const total = cutTotal();
+    const out = [];
+    const src = Array.isArray(S.cut.pts) ? S.cut.pts : [];
+    for (let i = 0; i < src.length; i++) {
+      let p = Number(src[i]);
+      if (!isFinite(p)) continue;
+      p = Math.round(p * 1000) / 1000;
+      if (p < CUT_GAP || p > total - CUT_GAP) continue;
+      if (out.length && p - out[out.length - 1] < CUT_GAP) continue;
+      out.push(p);
+    }
+    return out;
+  }
+  function cutCount() {
+    return cutPoints().length + 1;
+  }
+
+  // 지금 분할점이 정확히 'n초 간격'인지(칩 표시용)
+  function matchedEvery() {
+    const pts = cutPoints();
+    if (!pts.length) return 0;
+    const cand = [1, 2, 3, 4, 5];
+    for (let c = 0; c < cand.length; c++) {
+      const v = cand[c];
+      let ok = true;
+      for (let i = 0; i < pts.length; i++) {
+        if (Math.abs(pts[i] - v * (i + 1)) > 0.03) { ok = false; break; }
+      }
+      if (ok) return v;
+    }
+    return 0;
+  }
+
+  // 출력 시간 t 가 몇 번째 컷(0부터)에 속하는지
+  function cutIndexAt(t) {
+    const pts = cutPoints();
+    let i = 0;
+    while (i < pts.length && t >= pts[i]) i++;
+    return i;
+  }
+
+  // 컷 i 의 [시작, 끝] (출력 시간)
+  function cutRange(i) {
+    const pts = cutPoints();
+    const total = cutTotal();
+    return [i <= 0 ? 0 : pts[i - 1], i >= pts.length ? total : pts[i]];
+  }
+
+  function cloneCutOv(o) {
+    return {
+      comment: Object.assign({}, (o && o.comment) || S.ov.comment),
+      corner: Object.assign({}, (o && o.corner) || S.ov.corner)
+    };
+  }
+
+  // 컷 개수에 맞춰 컷별 오버레이 배열을 맞춘다(새 컷은 직전 컷 설정을 물려받는다)
+  function syncCutOverlays() {
+    const n = cutCount();
+    if (n < 2) { S.cutOv = []; S.cutSel = 0; return; }
+    let arr = Array.isArray(S.cutOv) ? S.cutOv.filter(Boolean) : [];
+    while (arr.length < n) arr.push(cloneCutOv(arr.length ? arr[arr.length - 1] : null));
+    if (arr.length > n) arr = arr.slice(0, n);
+    S.cutOv = arr;
+    S.cutSel = clamp(S.cutSel | 0, 0, n - 1);
+  }
+
+  // 시간 t 에 그릴 댓글 카드·코너 라벨(컷이 1개면 기존 단일 설정 그대로)
+  function cutOverlayAt(t) {
+    const i = cutIndexAt(t);
+    if (S.cutOv.length >= 2 && S.cutOv[i]) {
+      return { cut: i, comment: S.cutOv[i].comment, corner: S.cutOv[i].corner };
+    }
+    return { cut: 0, comment: S.ov.comment, corner: S.ov.corner };
+  }
+
+  // 오버레이 탭에서 고친 값을 지금 선택한 컷에 저장한다
+  function saveCutOverlay() {
+    if (S.cutOv.length < 2) return;
+    const i = clamp(S.cutSel | 0, 0, S.cutOv.length - 1);
+    if (!S.cutOv[i]) return;
+    S.cutOv[i].comment = Object.assign({}, S.ov.comment);
+    S.cutOv[i].corner = Object.assign({}, S.ov.corner);
+  }
+
+  function addCutPoint(tOut) {
+    const total = cutTotal();
+    const at = Math.round(clamp(Number(tOut) || 0, 0, total) * 1000) / 1000;
+    if (at < CUT_GAP || at > total - CUT_GAP) {
+      toast('영상 맨 앞·맨 뒤에는 분할점을 넣을 수 없어요');
+      return false;
+    }
+    const pts = cutPoints();
+    for (let i = 0; i < pts.length; i++) {
+      if (Math.abs(pts[i] - at) < CUT_GAP) {
+        toast('이미 이 위치에 분할점이 있어요 (' + fmtSec1(pts[i]) + ')');
+        return false;
+      }
+    }
+    // 새 분할점이 들어갈 순서 = 나뉘는 컷 번호
+    const pos = pts.filter(function (p) { return p < at; }).length;
+    pts.splice(pos, 0, at);
+    S.cut.pts = pts;
+    if (S.cutOv.length >= 2) {
+      S.cutOv.splice(pos + 1, 0, cloneCutOv(S.cutOv[pos]));
+      if (S.cutSel > pos) S.cutSel++;
+    }
+    syncCutOverlays();
+    renderCutUI();
+    dirty = true;
+    return true;
+  }
+
+  // pts[i] 분할점 삭제 → 컷 i 와 i+1 이 하나로 합쳐진다
+  function removeCutPoint(i) {
+    const pts = cutPoints();
+    if (i < 0 || i >= pts.length) return;
+    pts.splice(i, 1);
+    S.cut.pts = pts;
+    if (S.cutOv.length >= 2) {
+      S.cutOv.splice(i + 1, 1);
+      if (S.cutSel > i) S.cutSel--;
+    }
+    syncCutOverlays();
+    renderCutUI();
+    dirty = true;
+  }
+
+  function applyEvenSplit(step) {
+    const total = cutTotal();
+    const s = Math.max(0.5, Number(step) || 0);
+    const pts = [];
+    for (let t = s; t < total - CUT_GAP; t += s) pts.push(Math.round(t * 1000) / 1000);
+    if (!pts.length) {
+      toast('영상이 ' + s + '초보다 짧아 나눌 컷이 없어요');
+      return false;
+    }
+    S.cut.pts = pts;
+    S.cut.every = s;
+    S.cut.found = [];
+    syncCutOverlays();
+    renderCutUI();
+    dirty = true;
+    toast(pts.length + 1 + '컷으로 나눴어요 (' + s + '초 간격)');
+    return true;
+  }
+
+  function resetCuts(silent) {
+    S.cut.pts = [];
+    S.cut.every = 0;
+    S.cut.found = [];
+    S.cutOv = [];
+    S.cutSel = 0;
+    sceneMsg = SCENE_DEFAULT;
+    sceneCls = '';
+    renderCutUI();
+    dirty = true;
+    if (!silent) toast('분할을 모두 지웠어요');
+  }
+
+  // 오버레이 탭에서 편집할 컷을 바꾼다(고친 값은 이전 컷에 저장하고 새 컷 값을 불러온다)
+  function selectCut(i) {
+    const n = cutCount();
+    if (n < 2) return;
+    saveCutOverlay();
+    S.cutSel = clamp(i, 0, n - 1);
+    const c = S.cutOv[S.cutSel];
+    if (c) {
+      S.ov.comment = Object.assign({}, c.comment);
+      S.ov.corner = Object.assign({}, c.corner);
+    }
+    syncUI();
+    const r = cutRange(S.cutSel);
+    if (!exp) seekTo(rampTime(r[0] + Math.min(0.2, Math.max(0.02, (r[1] - r[0]) * 0.3))));
+    renderCutUI();
+    dirty = true;
+  }
+
+  function copyCutToAll() {
+    if (S.cutOv.length < 2) return;
+    saveCutOverlay();
+    const i = clamp(S.cutSel | 0, 0, S.cutOv.length - 1);
+    const src = S.cutOv[i];
+    for (let k = 0; k < S.cutOv.length; k++) if (k !== i) S.cutOv[k] = cloneCutOv(src);
+    renderCutUI();
+    dirty = true;
+    toast('컷 ' + (i + 1) + ' 설정을 모든 컷에 복사했어요');
+  }
+
+  /* ---- 장면 전환 자동 감지 (작은 캔버스에 프레임을 샘플링해 밝기 변화를 잰다) ---- */
+  const SCAN_W = 48, SCAN_H = 27;
+  const scanCvs = document.createElement('canvas');
+  scanCvs.width = SCAN_W;
+  scanCvs.height = SCAN_H;
+  const scanCtx = scanCvs.getContext('2d', { willReadFrequently: true });
+
+  // 민감도(%) → 밝기 평균 차이 임계값(0~1). 높을수록 작은 변화도 잡는다.
+  function sceneThreshold(sens) {
+    const s = clamp(Number(sens) || 55, 1, 100) / 100;
+    return 0.012 + Math.pow(1 - s, 1.5) * 0.30;
+  }
+
+  function grabGray() {
+    scanCtx.drawImage(mode === 'video' ? video : demoCanvas, 0, 0, SCAN_W, SCAN_H);
+    const d = scanCtx.getImageData(0, 0, SCAN_W, SCAN_H).data;
+    const g = new Float32Array(SCAN_W * SCAN_H);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) g[j] = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    return g;
+  }
+  function grayDiff(a, b) {
+    if (!a || !b || !a.length || a.length !== b.length) return 0;
+    let s = 0;
+    for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
+    return s / (a.length * 255);
+  }
+
+  function setSceneInfo(msg, cls) {
+    sceneMsg = msg;
+    sceneCls = cls || '';
+    if (!sceneInfoEl) return;
+    sceneInfoEl.textContent = msg;
+    sceneInfoEl.className = 'hint' + (cls ? ' ' + cls : '');
+  }
+
+  async function scanScenes() {
+    if (cutScanning) return [];
+    if (exp) { toast('내보내기 중에는 장면을 감지할 수 없어요'); return []; }
+    if (mode === 'video' && !video.videoWidth) { toast('영상을 아직 불러오는 중이에요. 잠시 후 다시 시도해 주세요'); return []; }
+    const step = clamp(Number(S.cut.step) || 0.3, 0.15, 2);
+    const thr = sceneThreshold(S.cut.sens);
+    const a = S.trimStart, b = S.trimEnd;
+    if (b - a < step * 2) { toast('구간이 너무 짧아 장면 전환을 찾기 어려워요'); return []; }
+
+    const wasPlaying = playing;
+    const backSrc = srcPos();
+    if (wasPlaying) { playing = false; try { video.pause(); } catch (e) { /* noop */ } updatePlayBtn(); }
+    cutScanning = true;
+    if (btnSceneScan) btnSceneScan.disabled = true;
+    const found = [];
+    let readFail = false;
+    const total = Math.max(1, Math.ceil((b - a) / step));
+    let prev = null, lastHit = -1e9, n = 0;
+    setSceneInfo('장면을 살피는 중… 0%');
+    try {
+      for (let t = a; t <= b - 0.02; t += step) {
+        if (mode === 'video') await seekVideo(t);
+        else { paintDemo(t); demoPainted = t; }
+        let g = null;
+        try { g = grabGray(); } catch (e) { readFail = true; break; }
+        if (prev) {
+          const d = grayDiff(prev, g);
+          if (d >= thr && (t - lastHit) >= Math.max(0.5, step * 1.6)) {
+            // 두 샘플 사이를 이분 탐색해 전환 지점을 좁힌다(간격/2 의 1/16 수준까지)
+            let lo = t - step, hi = t;
+            for (let k = 0; k < 4; k++) {
+              const mid = (lo + hi) / 2;
+              if (mode === 'video') await seekVideo(mid);
+              else { paintDemo(mid); demoPainted = mid; }
+              let mg = null;
+              try { mg = grabGray(); } catch (e2) { mg = null; }
+              if (!mg) break;
+              if (grayDiff(prev, mg) >= thr) hi = mid; else lo = mid;
+            }
+            const at = outTimeAt(hi);
+            if (at > CUT_GAP && at < cutTotal() - CUT_GAP) {
+              found.push(Math.round(at * 1000) / 1000);
+              lastHit = t;
+            }
+          }
+        }
+        prev = g;
+        n++;
+        if (n % 6 === 0) {
+          setSceneInfo('장면을 살피는 중… ' + Math.round((n / total) * 100) + '%');
+          await new Promise(function (r) { setTimeout(r, 0); });
+        }
+      }
+    } catch (e) {
+      readFail = true;
+    } finally {
+      cutScanning = false;
+      if (btnSceneScan) btnSceneScan.disabled = false;
+      if (mode === 'video') { try { await seekVideo(backSrc); } catch (e) { /* noop */ } }
+      else demoPainted = -1;   // 다음 프레임에 원래 위치를 다시 그린다
+      dirty = true;
+    }
+
+    if (readFail) {
+      S.cut.found = [];
+      setSceneInfo('이 영상은 브라우저가 화면 픽셀을 읽지 못해 장면 전환을 감지할 수 없어요. 같은 기기에서 고른 영상 파일을 다시 불러오거나, ‘일정 간격 자동 분할’을 써 주세요.', 'warn');
+      toast('화면 픽셀을 읽을 수 없어 장면 전환을 감지하지 못했어요');
+      renderCutUI();
+      return [];
+    }
+    S.cut.found = found;
+    if (found.length) {
+      setSceneInfo('장면 전환 ' + found.length + '곳을 찾았어요. ‘감지한 지점 적용’을 누르면 컷으로 나눕니다.', 'ok');
+      toast('장면 전환 ' + found.length + '곳을 찾았어요');
+    } else {
+      setSceneInfo('장면 전환이 뚜렷하게 잡히지 않았어요. 민감도를 올리거나 샘플 간격을 좁혀 다시 시도해 보세요.', 'warn');
+      toast('장면 전환이 뚜렷하지 않아요. 민감도를 올려 다시 해 보세요');
+    }
+    renderCutUI();
+    return found;
+  }
+
+  function applyFoundCuts() {
+    const found = Array.isArray(S.cut.found) ? S.cut.found : [];
+    if (!found.length) { toast('먼저 장면 전환을 감지해 주세요'); return false; }
+    const pts = cutPoints().concat(found).sort(function (x, y) { return x - y; });
+    S.cut.pts = pts;
+    S.cut.found = [];
+    S.cut.every = 0;
+    syncCutOverlays();
+    renderCutUI();
+    dirty = true;
+    setSceneInfo('감지한 지점을 적용했어요 · 지금 ' + cutCount() + '컷입니다.', 'ok');
+    toast(cutCount() + '컷으로 나눴어요');
+    return true;
+  }
+
+  /* ---- 컷 UI ---- */
+  function updateCutNow() {
+    if (!cutNowEl) return;
+    const n = cutCount();
+    const i = cutIndexAt(outTime());
+    cutNowEl.textContent = '현재 재생 위치: 컷 ' + (i + 1) + ' / ' + n
+      + (n > 1 ? ' · 결과 영상 ' + fmtSec1(cutRange(i)[0]) + '~' + fmtSec1(cutRange(i)[1]) + '초' : '');
+  }
+
+  function renderCutUI() {
+    syncCutOverlays();
+    const n = cutCount();
+    if (cutCountTag) cutCountTag.textContent = n + '컷';
+    updateCutNow();
+
+    if (cutListEl) {
+      const sel = n > 1 ? S.cutSel : -1;
+      let html = '';
+      for (let i = 0; i < n; i++) {
+        const r = cutRange(i);
+        html += '<div class="cut-row' + (i === sel ? ' on' : '') + '">'
+          + '<span class="cut-no">컷 ' + (i + 1) + '</span>'
+          + '<span class="cut-time">' + fmtSec1(r[0]) + ' – ' + fmtSec1(r[1]) + '</span>'
+          + '<span class="cut-len">' + (r[1] - r[0]).toFixed(1) + '초</span>'
+          + (i > 0
+            ? '<button type="button" class="cut-del" data-del="' + i + '" aria-label="컷 ' + (i + 1) + ' 시작 분할점 삭제">✕</button>'
+            : '<span class="cut-del pad"></span>')
+          + '</div>';
+      }
+      cutListEl.innerHTML = html;
+      $$('#cutList .cut-del[data-del]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          removeCutPoint(Number(b.dataset.del) - 1);
+          toast('분할점을 지웠어요 · ' + cutCount() + '컷');
+        });
+      });
+    }
+
+    $$('#segCutEvery .chip').forEach(function (b) {
+      b.classList.toggle('on', Math.abs(matchedEvery() - Number(b.dataset.v)) < 1e-6);
+    });
+
+    if (cutOverlayCard) cutOverlayCard.hidden = n < 2;
+    if (cutChips) {
+      let h = '';
+      for (let i = 0; i < n; i++) {
+        h += '<button type="button" class="chip' + (i === S.cutSel ? ' on' : '') + '" data-cut="' + i + '">'
+          + '컷 ' + (i + 1) + ' · ' + fmtSec1(cutRange(i)[0]) + '</button>';
+      }
+      cutChips.innerHTML = h;
+      $$('#cutChips .chip').forEach(function (b) {
+        b.addEventListener('click', function () { selectCut(Number(b.dataset.cut)); });
+      });
+    }
+    $$('[data-cut-target]').forEach(function (el) {
+      el.hidden = n < 2;
+      el.textContent = '컷 ' + (S.cutSel + 1);
+    });
+    if (btnSceneApply) btnSceneApply.hidden = !(S.cut.found && S.cut.found.length);
+    if (!S.cut.found || !S.cut.found.length) {
+      if (sceneInfoEl && !cutScanning) {
+        sceneInfoEl.textContent = sceneMsg;
+        sceneInfoEl.className = 'hint' + (sceneCls ? ' ' + sceneCls : '');
+      }
+    }
   }
 
   /* ---------------- demo source painter ---------------- */
@@ -720,8 +1138,8 @@
     ctx.closePath();
   }
 
-  function drawComment(ctx, W, H) {
-    const o = S.ov.comment;
+  function drawComment(ctx, W, H, ov) {
+    const o = ov || S.ov.comment;
     if (!o.on) return;
     const user = (o.user || '').trim() || '익명';
     const body = (o.text || '').trim();
@@ -807,8 +1225,8 @@
     });
   }
 
-  function drawCorner(ctx, W, H) {
-    const o = S.ov.corner;
+  function drawCorner(ctx, W, H, ov) {
+    const o = ov || S.ov.corner;
     if (!o.on) return;
     const left = (o.left || '').trim();
     const right = (o.right || '').trim();
@@ -939,9 +1357,11 @@
   }
 
   function drawOverlays(ctx, W, H, t) {
-    drawCorner(ctx, W, H);
+    // t 가 속한 컷의 댓글 카드·코너 라벨을 쓴다(컷이 1개면 기존과 완전히 동일)
+    const co = cutOverlayAt(t);
+    drawCorner(ctx, W, H, co.corner);
     drawTitle(ctx, W, H);
-    drawComment(ctx, W, H);
+    drawComment(ctx, W, H, co.comment);
     drawSubtitle(ctx, W, H, t);
   }
 
@@ -1053,6 +1473,7 @@
     timeLabel.textContent = fmtTime(pos) + ' / ' + fmtTime(seg);
     timeFill.style.width = (pos / seg * 100).toFixed(2) + '%';
     speedChip.textContent = speedLabel(S.speed);
+    updateCutNow();
   }
 
   function updatePlayBtn() {
@@ -1776,6 +2197,7 @@
     S.autocut.analyzed = false;
     cutRuns = [];
     updateAutoInfo();
+    resetCuts(true);      // 구간이 바뀌므로 컷 분할도 초기화
     durProbe = false;
     clearTimeout(durTimer);
     mode = 'video';
@@ -1796,6 +2218,7 @@
     video.pause();
     demoAbs = 0;
     setDuration(DEMO_DURATION);
+    resetCuts(true);
     updateSrcInfo('샘플 데모 영상 · 0:15 · 1280×720');
     dirty = true;
     updatePlayBtn();
@@ -2154,6 +2577,8 @@
         trim: [S.trimStart, S.trimEnd],
         speed: S.speed,
         autocut: !!S.autocut.on,
+        cut_count: cutCount(),
+        cut_points: cutPoints(),
         font: S.font,
         letterSpacingPx: S.ls,
         lineHeight: Number(S.lh) || 1.45,
@@ -2380,6 +2805,8 @@
           updateOutputs();
           if (path.indexOf('filter.') === 0) { S.preset = ''; syncSegs(); }
         }
+        // 댓글 카드·코너 라벨은 컷이 2개 이상이면 지금 고른 컷에 같이 저장한다
+        if (path.indexOf('ov.comment.') === 0 || path.indexOf('ov.corner.') === 0) saveCutOverlay();
         dirty = true;
       });
       if (isCheck) {
@@ -2486,6 +2913,34 @@
     });
     const btnAnalyze = $('#btnAnalyze');
     if (btnAnalyze) btnAnalyze.addEventListener('click', function () { analyzeSilence(); });
+
+    // 컷(씬) 분할
+    const btnCutAdd = $('#btnCutAdd');
+    if (btnCutAdd) btnCutAdd.addEventListener('click', function () {
+      if (addCutPoint(outTime())) {
+        toast(cutCount() + '컷으로 나눴어요 · 오버레이 탭에서 컷별 댓글 카드를 넣을 수 있어요');
+      }
+    });
+    const btnCutClear = $('#btnCutClear');
+    if (btnCutClear) btnCutClear.addEventListener('click', function () { resetCuts(false); });
+    $$('#segCutEvery .chip').forEach(function (b) {
+      b.addEventListener('click', function () { applyEvenSplit(Number(b.dataset.v)); });
+    });
+    const sceneSens = $('#sceneSens'), sceneStep = $('#sceneStep');
+    if (sceneSens) sceneSens.addEventListener('input', function () {
+      S.cut.sens = Number(sceneSens.value);
+      const o = $('#outSceneSens');
+      if (o) o.textContent = S.cut.sens + '%';
+    });
+    if (sceneStep) sceneStep.addEventListener('input', function () {
+      S.cut.step = Number(sceneStep.value);
+      const o = $('#outSceneStep');
+      if (o) o.textContent = S.cut.step.toFixed(2) + '초';
+    });
+    if (btnSceneScan) btnSceneScan.addEventListener('click', function () { scanScenes(); });
+    if (btnSceneApply) btnSceneApply.addEventListener('click', function () { applyFoundCuts(); });
+    const btnCopyCut = $('#btnCopyCut');
+    if (btnCopyCut) btnCopyCut.addEventListener('click', copyCutToAll);
 
     // 오디오 · 페이드 · BGM
     const audVol = $('#audVol');
@@ -2714,6 +3169,7 @@
     demoAbs = 0;
     setDuration(DEMO_DURATION);
     syncUI();
+    renderCutUI();
     updateSrcInfo('샘플 데모 영상 · 0:15 · 1280×720');
     setCapabilityNote();
     updatePlayBtn();
@@ -2741,13 +3197,53 @@
         };
       },
       job: function () { return buildJob(); },
+      // ----- 컷(씬) 분할 디버그/테스트용 -----
+      cut: function () {
+        return {
+          count: cutCount(), pts: cutPoints(), sel: S.cutSel, every: S.cut.every,
+          found: (S.cut.found || []).slice(), scanning: cutScanning,
+          ranges: (function () { const r = []; for (let i = 0; i < cutCount(); i++) r.push(cutRange(i)); return r; })(),
+          overlayCount: S.cutOv.length
+        };
+      },
+      cutIndexAt: function (t) { return cutIndexAt(t === undefined ? outTime() : Number(t)); },
+      cutOverlayAt: function (t) {
+        const r = cutOverlayAt(t === undefined ? outTime() : Number(t));
+        return { cut: r.cut, comment: JSON.parse(JSON.stringify(r.comment)), corner: JSON.parse(JSON.stringify(r.corner)) };
+      },
+      addCut: function (t) { return addCutPoint(t === undefined ? outTime() : Number(t)); },
+      evenSplit: function (s) { return applyEvenSplit(s); },
+      resetCuts: function () { resetCuts(true); },
+      selectCut: function (i) { selectCut(Number(i)); },
+      scanScenes: function () { return scanScenes(); },
+      applyFoundCuts: function () { return applyFoundCuts(); },
+      sceneThreshold: function (s) { return sceneThreshold(s === undefined ? S.cut.sens : s); },
+      sceneDiff: function (a, b) { return grayDiff(Float32Array.from(a), Float32Array.from(b)); },
+      // 내보내기가 쓰는 drawScene 을 같은 크기·같은 t 로 그려 보고 지문을 돌려준다
+      renderProbe: function (t, w, h) {
+        const cw = w || 720, ch = h || 1280;
+        const tt = t === undefined ? outTime() : Number(t);
+        if (mode === 'demo') { paintDemo(rampTime(tt)); demoPainted = -1; }
+        const c = document.createElement('canvas');
+        c.width = cw; c.height = ch;
+        const x = c.getContext('2d', { alpha: false });
+        drawScene(x, cw, ch, tt, { guide: false });
+        const d = x.getImageData(0, 0, cw, ch).data;
+        let hsh = 2166136261;
+        for (let i = 0; i < d.length; i += 613) {
+          hsh = ((hsh * 16777619) ^ d[i]) >>> 0;
+          hsh = ((hsh * 16777619) ^ d[i + 1]) >>> 0;
+          hsh = ((hsh * 16777619) ^ d[i + 2]) >>> 0;
+        }
+        dirty = true;
+        return hsh;
+      },
       rampTime: function (t) { return rampTime(t); },
       rampState: function () {
         const st = rampState();
         return { total: st.total, flat: st.flat, cum: st.cum.map(function (v) { return Math.round(v * 1000) / 1000; }), segs: st.segs };
       },
-      speedAt: function (u) { return speedAt(u); },
-      speedAtSrc: function (p) { return speedAtSrc(p === undefined ? srcPos() : p); },
+      speedAt: function (u) { return speedAt(u); },      speedAtSrc: function (p) { return speedAtSrc(p === undefined ? srcPos() : p); },
       outTime: function () { return outTime(); },
       audioProbe: function (opts) { return audioProbe(opts); },
       updateDuck: function () { updateDuck(); },

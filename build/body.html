@@ -147,6 +147,43 @@
           <p class="hint" id="acInfo">영상을 선택한 뒤 무음 분석을 눌러 주세요. (샘플 데모에는 소리가 없어요)</p>
         </div>
 
+        <div class="card" id="cutCard">
+          <h2 class="card-title"><span class="dot"></span>컷(씬) 분할<span class="tag" id="cutCountTag">1컷</span></h2>
+          <p class="hint">영상을 여러 컷으로 나누면 <b>오버레이</b> 탭에서 컷마다 댓글 카드·코너 라벨을 따로 넣을 수 있어요. 분할점은 <b>결과 영상(출력) 시간</b> 기준입니다.</p>
+          <div class="btn-row">
+            <button class="btn primary sm" id="btnCutAdd">✂️ 현재 위치에서 컷 추가</button>
+            <button class="btn ghost sm" id="btnCutClear">분할 전체 초기화</button>
+          </div>
+          <div class="cut-list" id="cutList" aria-label="컷 목록"></div>
+          <div class="field">
+            <label>일정 간격 자동 분할</label>
+            <div class="chips" id="segCutEvery" role="group" aria-label="일정 간격 자동 분할">
+              <button type="button" class="chip" data-v="1">1초</button>
+              <button type="button" class="chip" data-v="2">2초</button>
+              <button type="button" class="chip" data-v="3">3초</button>
+              <button type="button" class="chip" data-v="4">4초</button>
+              <button type="button" class="chip" data-v="5">5초</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>장면 전환 자동 감지</label>
+            <div class="row">
+              <div class="row-head"><label for="sceneSens">민감도</label><output id="outSceneSens">55%</output></div>
+              <input type="range" id="sceneSens" min="5" max="95" step="5" value="55" aria-label="장면 전환 민감도">
+            </div>
+            <div class="row">
+              <div class="row-head"><label for="sceneStep">샘플 간격</label><output id="outSceneStep">0.30초</output></div>
+              <input type="range" id="sceneStep" min="0.2" max="0.6" step="0.05" value="0.3" aria-label="프레임 샘플 간격">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn ghost sm" id="btnSceneScan">🔍 장면 전환 감지</button>
+            <button class="btn primary sm" id="btnSceneApply" hidden>감지한 지점 적용</button>
+          </div>
+          <p class="hint" id="sceneInfo">영상을 불러온 뒤 ‘장면 전환 감지’를 누르면 화면이 확 바뀌는 지점을 찾습니다.</p>
+          <p class="hint" id="cutNow">현재 재생 위치: 컷 1 / 1</p>
+        </div>
+
         <div class="card">
           <h2 class="card-title"><span class="dot"></span>오디오 · 페이드 · BGM</h2>
           <div class="row">
@@ -309,6 +346,13 @@
       <div class="panel" id="panel-overlay">
         <p class="hint" style="margin:0 0 10px">쇼츠에서 반응 좋은 자막·카드 오버레이입니다. 각 항목의 스위치로 켜고 끌 수 있어요.</p>
 
+        <div class="card" id="cutOverlayCard" hidden>
+          <h2 class="card-title"><span class="dot"></span>컷별 댓글 카드 · 코너 라벨<span class="tag" id="cutOverlayTag">컷 1</span></h2>
+          <p class="hint">컷을 고르면 아래 <b>유튜브 댓글 카드</b>·<b>코너 라벨</b> 입력이 그 컷에 저장됩니다. 재생·내보내기에서 시간에 맞는 컷 설정이 자동으로 나옵니다.</p>
+          <div class="chips" id="cutChips" role="group" aria-label="편집할 컷 선택"></div>
+          <div class="btn-row"><button class="btn ghost sm" id="btnCopyCut">이 컷 설정을 모든 컷에 복사</button></div>
+        </div>
+
         <div class="card">
           <h2 class="card-title"><span class="dot"></span>글꼴 · 자간 · 행간</h2>
           <div class="field">
@@ -350,7 +394,7 @@
 
         <details class="card" open>
           <summary>
-            <span class="sum-title">유튜브 댓글 카드</span>
+            <span class="sum-title">유튜브 댓글 카드<span class="tag" data-cut-target hidden>컷 1</span></span>
             <span style="display:flex;align-items:center;gap:10px">
               <input type="checkbox" class="sw" data-bind="ov.comment.on" checked aria-label="댓글 카드 켜기">
               <span class="chev"></span>
@@ -366,7 +410,7 @@
 
         <details class="card" open>
           <summary>
-            <span class="sum-title">코너 라벨 · 워터마크</span>
+            <span class="sum-title">코너 라벨 · 워터마크<span class="tag" data-cut-target hidden>컷 1</span></span>
             <span style="display:flex;align-items:center;gap:10px">
               <input type="checkbox" class="sw" data-bind="ov.corner.on" checked aria-label="코너 라벨 켜기">
               <span class="chev"></span>
@@ -510,6 +554,7 @@
       <li><b>영상 선택</b>으로 휴대폰 영상을 불러오면 9:16 미리보기에 맞춰집니다.</li>
       <li><b>영상</b> 탭에서 구간과 속도를, <b>색감</b> 탭에서 프리셋을, <b>화면</b> 탭에서 반전·확대·블러를 조정하세요.</li>
       <li><b>오버레이</b> 탭에서 제목·댓글 카드·코너 라벨·자막을 넣습니다.</li>
+      <li>영상을 여러 장면으로 나누려면 <b>영상</b> 탭의 <b>컷(씬) 분할</b>을 씁니다. 컷이 2개 이상이면 <b>오버레이</b> 탭에서 컷마다 다른 댓글 카드·코너 라벨을 넣을 수 있어요.</li>
       <li><b>내보내기</b> 탭에서 화질을 고르고 저장하면 .webm 파일이 내려받아집니다.</li>
     </ol>
     <button class="btn primary" id="btnCloseHelp" style="width:100%">알겠어요</button>
