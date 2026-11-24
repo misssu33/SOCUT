@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>shorts-pro overlay</title>
+<style>
+  :root{
+    --w:1080px; --h:1920px;
+    --font: "Noto Sans CJK KR","Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    --safe-top:288px; --safe-bottom:672px; --safe-left:96px; --safe-right:192px;
+    --ls:0px; --lh-sub:1.18; --lh-title:1.12; --lh-body:1.32;
+  }
+  *{box-sizing:border-box; -webkit-font-smoothing:antialiased;}
+  html,body{margin:0;padding:0;width:var(--w);height:var(--h);background:transparent;overflow:hidden;}
+  #stage{position:relative;width:var(--w);height:var(--h);font-family:var(--font);}
+  .layer{position:absolute;left:0;top:0;width:var(--w);height:var(--h);}
+  .hidden{display:none !important;}
+
+  /* ---------- 상단 고정 타이틀 ---------- */
+  #title{margin:0;}
+  #titleScrim{position:absolute;left:0;top:0;width:1080px;height:560px;
+    background:linear-gradient(180deg, rgba(0,0,0,.62) 0%, rgba(0,0,0,.34) 48%, rgba(0,0,0,0) 100%);}
+  #title .inner{position:absolute;left:60px;top:300px;width:960px;}
+  #badge{display:inline-block;height:64px;line-height:64px;padding:0 26px;border-radius:32px;
+         font-size:34px;font-weight:800;color:#fff;background:#2F6BFF;margin-bottom:18px;
+         box-shadow:0 8px 24px rgba(0,0,0,.35);}
+  #titleText{font-size:76px;font-weight:900;line-height:var(--lh-title);letter-spacing:var(--ls);color:#fff;
+             text-shadow:0 6px 24px rgba(0,0,0,.85), 0 0 4px rgba(0,0,0,.65);word-break:keep-all;}
+
+  /* ---------- 코너 라벨 ---------- */
+  #cornerLeft{position:absolute;left:60px;top:210px;height:56px;line-height:56px;padding:0 18px;
+              border-radius:12px;background:rgba(0,0,0,.72);color:#fff;font-size:30px;font-weight:700;}
+  #cornerRight{position:absolute;right:60px;top:214px;color:rgba(255,255,255,.85);
+               font-size:28px;font-weight:700;text-shadow:0 3px 12px rgba(0,0,0,.5);}
+
+  /* ---------- 댓글 카드 ---------- */
+  #comment{position:absolute;left:60px;top:520px;width:800px;border-radius:28px;
+           background:rgba(255,255,255,.96);box-shadow:0 12px 40px rgba(0,0,0,.35);
+           padding:26px;color:#111118;}
+  #comment .row{display:flex;align-items:center;gap:16px;}
+  #comment .avatar{width:64px;height:64px;border-radius:50%;background:#E8E8EE;display:flex;
+                   align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#8A8A98;}
+  #comment .handle{font-size:30px;font-weight:700;color:#606070;}
+  #comment .likes{margin-left:auto;font-size:26px;color:#8A8A98;}
+  #comment .body{margin-top:14px;font-size:38px;font-weight:700;line-height:var(--lh-body);letter-spacing:var(--ls);word-break:keep-all;}
+  #comment .accent{color:#6B4DE6;font-weight:800;}
+
+  /* ---------- 하단 모션 자막 ---------- */
+  #subs{position:absolute;left:90px;top:1200px;width:900px;height:250px;display:flex;
+        align-items:center;justify-content:center;text-align:center;}
+  .sub-text{font-size:88px;font-weight:900;line-height:var(--lh-sub);letter-spacing:var(--ls);color:#fff;word-break:keep-all;
+           -webkit-text-stroke:10px #101014;paint-order:stroke fill;
+           text-shadow:0 8px 28px rgba(0,0,0,.6);transform-origin:50% 60%;}
+  .sub-text .w{display:inline-block;will-change:transform,opacity;}
+  .sub-text .c{display:inline-block;}
+  .sub-text.chipbox{background:#2F6BD9;padding:10px 26px;border-radius:16px;-webkit-text-stroke:0;
+                   box-shadow:0 10px 30px rgba(0,0,0,.35);}
+  #cursor{display:inline-block;width:10px;margin-left:6px;opacity:1;}
+  .hl{color:#F0A93C;}
+  #emoji{display:inline-block;margin-left:12px;}
+
+  /* ---------- 안전영역 가이드 ---------- */
+  #guide{position:absolute;left:var(--safe-left);top:var(--safe-top);
+         width:calc(var(--w) - var(--safe-left) - var(--safe-right));
+         height:calc(var(--h) - var(--safe-top) - var(--safe-bottom));
+         border:2px dashed rgba(255,60,120,.9);}
+  #guideBand{position:absolute;left:0;top:1200px;width:1080px;height:250px;
+             border:2px dashed rgba(60,200,255,.9);}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="title"><div id="titleScrim"></div><div class="inner">
+    <div id="badge" class="hidden"></div>
+    <div id="titleText"></div>
+  </div></div>
+
+  <div class="layer">
+    <div id="cornerLeft" class="hidden"></div>
+    <div id="cornerRight" class="hidden"></div>
+  </div>
+
+  <div class="layer"><div id="comment" class="hidden">
+    <div class="row"><div class="avatar" id="cAvatar">댓</div>
+      <div class="handle" id="cHandle">@user</div>
+      <div class="likes" id="cLikes">♡ 0</div></div>
+    <div class="body" id="cBody"></div>
+  </div></div>
+
+  <div class="layer"><div id="subs"><div id="subText" class="sub-text" style="display:none"></div></div></div>
+
+  <div class="layer hidden" id="guideLayer">
+    <div id="guide"></div><div id="guideBand"></div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------- helpers
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+const easeOut = t => 1 - Math.pow(1 - clamp(t,0,1), 3);
+const easeOutBack = t => { t = clamp(t,0,1); const c=1.70158, s=c+1; return 1 + s*Math.pow(t-1,3) + c*Math.pow(t-1,2); };
+function hash(str){let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0);}
+function rnd(seed){let x=Math.sin(seed)*10000;return x-Math.floor(x);}
+
+let S = {}, P = {}, capEls = [];
+
+// ---------------------------------------------------------------- build
+function build(){
+  S = window.SCRIPT || {duration: 5, subtitles: []};
+  P = window.PRESETS || {};
+  const L = P.layouts || {};
+
+  // 자간·행간 (SCRIPT.typography > presets.typography 기본값)
+  const TP = P.typography || {};
+  const S_tp = S.typography || {};
+  const lsDef = (TP.letter_spacing_px && TP.letter_spacing_px.default) || 0;
+  const lhDef = (TP.line_height && TP.line_height.default) || 1.18;
+  const lhBy = TP.line_height_by_layout || {};
+  const lsVal = S_tp.letter_spacing != null ? Number(S_tp.letter_spacing) : Number(lsDef);
+  const lhVal = S_tp.line_height != null ? Number(S_tp.line_height) : Number(lhDef);
+  const stage = $("#stage");
+  stage.style.setProperty("--ls", (isFinite(lsVal) ? lsVal : 0) + "px");
+  stage.style.setProperty("--lh-sub", String(isFinite(lhVal) ? lhVal : 1.18));
+  stage.style.setProperty("--lh-title", String(Number(S_tp.line_height_title) || Number(lhBy.title) || 1.12));
+  stage.style.setProperty("--lh-body", String(Number(S_tp.line_height_body) || Number(lhBy.comment_body) || 1.32));
+  if (S_tp.font) stage.style.setProperty("--font", S_tp.font);
+
+  // 상단 타이틀
+  const tt = S.title;
+  if (tt) {
+    if (tt.scrim === false) { const sc = $("#titleScrim"); if (sc) sc.style.display = "none"; }
+    const b = $("#badge");
+    if (tt.badge) { b.textContent = tt.badge; b.classList.remove("hidden");
+      if (tt.badge_color) b.style.background = tt.badge_color; }
+    const t = $("#titleText"); t.innerHTML = "";
+    (tt.text || []).forEach(part => {
+      const sp = document.createElement("span");
+      sp.textContent = typeof part === "string" ? part : part.t;
+      if (part && part.c) sp.style.color = part.c;
+      t.appendChild(sp);
+    });
+  }
+
+  // 코너 라벨 (구간별)
+  $("#cornerLeft").className = "hidden"; $("#cornerRight").className = "hidden";
+
+  // 댓글 카드들
+  const holder = $("#comment").parentElement;
+  (S.comments || []).forEach((c, i) => {
+    const card = i === 0 ? $("#comment") : $("#comment").cloneNode(true);
+    if (i > 0) { card.id = "comment" + i; holder.appendChild(card); }
+    card.dataset.start = c.start; card.dataset.end = c.end;
+    card.querySelector("#cAvatar") && (card.querySelector(".avatar").textContent = (c.handle||"댓").replace("@","").slice(0,1));
+    card.querySelector(".handle").textContent = c.handle || "@user";
+    card.querySelector(".likes").textContent = "♡ " + (c.likes || "0");
+    const body = card.querySelector(".body");
+    let html = "";
+    const accent = c.accent || "";
+    if (accent) {
+      const idx = c.text.indexOf(accent);
+      if (idx >= 0) html = escapeHtml(c.text.slice(0,idx)) + '<span class="accent">' + escapeHtml(accent) + "</span>" + escapeHtml(c.text.slice(idx+accent.length));
+      else html = escapeHtml(c.text);
+    } else html = escapeHtml(c.text);
+    body.innerHTML = html;
+  });
+
+  // 자막
+  capEls = (S.subtitles || []).map(makeCaption);
+  if (S.guide) $("#guideLayer").classList.remove("hidden");
+  window.__ready = true;
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function motionFor(id){
+  const list = (P.subtitle_motions || []);
+  return list.find(m => m.id === id) || list.find(m => m.id === "pop-bounce") || {html:{anim:"pop"}};
+}
+
+function makeCaption(c){
+  const m = motionFor(c.style || "pop-bounce");
+  const anim = (m.html && m.html.anim) || "pop";
+  const el = $("#subText").cloneNode(false);
+  el.id = ""; el.className = "sub-text";
+  el.style.position = "absolute"; el.style.left = "0"; el.style.top = "0";
+  el.style.width = "900px";
+  el.dataset.start = c.start; el.dataset.end = c.end;
+  $("#subText").parentElement.appendChild(el);
+
+  const words = String(c.text || "").split(/\s+/).filter(Boolean);
+  const hl = c.highlight || "";
+  const spans = [];
+  el.innerHTML = "";
+  if (anim === "typewriter" || anim === "random" || anim === "jelly") {
+    // 글자 단위
+    words.forEach((w, wi) => {
+      const ws = document.createElement("span"); ws.className = "w";
+      [...w].forEach((ch, ci) => {
+        const cs = document.createElement("span"); cs.className = "c"; cs.textContent = ch;
+        ws.appendChild(cs); spans.push(cs);
+      });
+      el.appendChild(ws);
+      if (wi < words.length - 1) el.appendChild(document.createTextNode(" "));
+    });
+  } else {
+    words.forEach((w, wi) => {
+      const ws = document.createElement("span"); ws.className = "w";
+      const isHl = hl && w.includes(hl);
+      if (isHl) ws.classList.add("hl");
+      if (anim === "count") {
+        const mm = w.match(/(\d[\d,\.]*)/);
+        if (mm) {
+          if (mm.index > 0) ws.appendChild(document.createTextNode(w.slice(0, mm.index)));
+          const ns = document.createElement("span"); ns.className = "num"; ns.textContent = mm[1];
+          ws.appendChild(ns);
+          if (mm.index + mm[1].length < w.length) ws.appendChild(document.createTextNode(w.slice(mm.index + mm[1].length)));
+          ws.dataset.hasNum = "1";
+        } else ws.textContent = w;
+      } else ws.textContent = w;
+      el.appendChild(ws);
+      spans.push(ws);
+      if (wi < words.length - 1) el.appendChild(document.createTextNode(" "));
+    });
+  }
+  if (anim === "chip") el.classList.add("chipbox");
+  if (anim === "led") el.style.letterSpacing = "6px";
+  return {el, c, anim, m, spans, words};
+}
+
+// ---------------------------------------------------------------- render
+function renderAt(t){
+  // 타이틀: 첫 프레임부터 끝까지
+  if (S.title) {
+    const st = S.title.start ?? 0, en = S.title.end ?? S.duration ?? 999;
+    const on = t >= st && t <= en;
+    $("#title").style.opacity = on ? 1 : 0;
+    if (S.title.motion === "pop") {
+      const k = easeOut((t - st) / 0.28);
+      $("#title .inner").style.transform = "scale(" + (0.94 + 0.06 * k) + ")";
+      $("#title .inner").style.opacity = String(clamp(k * 1.4, 0, 1));
+    }
+  }
+
+  // 코너 라벨
+  const cl = (S.corner || []).find(x => t >= (x.start ?? 0) && t <= (x.end ?? 999));
+  const clEl = $("#cornerLeft"), crEl = $("#cornerRight");
+  if (cl) {
+    clEl.classList.remove("hidden"); clEl.textContent = cl.left || "";
+    if (cl.right) { crEl.classList.remove("hidden"); crEl.textContent = cl.right; }
+    else crEl.classList.add("hidden");
+  } else { clEl.classList.add("hidden"); crEl.classList.add("hidden"); }
+
+  // 댓글 카드
+  document.querySelectorAll("[data-start]").forEach(card => {
+    if (card.id && card.id.startsWith("comment")) {
+      const on = t >= +card.dataset.start && t <= +card.dataset.end;
+      card.classList.toggle("hidden", !on);
+      if (on) {
+        const k = easeOut((t - +card.dataset.start) / 0.22);
+        card.style.opacity = String(k);
+        card.style.transform = "translateY(" + (16 * (1 - k)) + "px)";
+      }
+    }
+  });
+
+  // 자막
+  capEls.forEach(cap => { drawCaption(cap, t); });
+  window.__renderedAt = t;
+}
+
+function drawCaption(cap, t){
+  const {el, c, anim, m, spans, words} = cap;
+  const on = t >= c.start && t <= c.end;
+  if (!on) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  const lt = t - c.start, dur = Math.max(0.1, c.end - c.start);
+  const opt = m.html || {};
+
+  const reset = () => {
+    el.style.transform = ""; el.style.opacity = "1";
+    spans.forEach(s => { s.style.opacity = "1"; s.style.transform = ""; s.style.color = ""; });
+  };
+  reset();
+
+  switch (anim) {
+    case "none": break;
+
+    case "pop": {
+      const inMs = (opt.in_ms || 230) / 1000, peak = opt.peak || 1.12;
+      let s = 1;
+      if (lt < inMs * 0.5) s = 0.62 + (peak - 0.62) * easeOut(lt / (inMs * 0.5));
+      else if (lt < inMs) s = peak - (peak - 1) * easeOut((lt - inMs * 0.5) / (inMs * 0.5));
+      el.style.transform = `scale(${s})`;
+      el.style.opacity = String(clamp(lt / 0.06, 0, 1));
+      break;
+    }
+
+    case "typewriter": {
+      const charMs = (opt.char_ms || 45) / 1000;
+      const total = spans.length; // 전체 글자 수
+      const n = Math.min(total, Math.floor(lt / charMs) + 1);
+      let i = 0;
+      spans.forEach(s => s.style.opacity = (i++ < n) ? "1" : "0");
+      el.style.opacity = "1";
+      break;
+    }
+
+    case "shift": {
+      const st = (opt.stagger_ms || 90) / 1000, from = opt.from_px || 34;
+      words.forEach((w, i) => {
+        const k = easeOut((lt - i * st) / 0.18);
+        const sp = spans[i];
+        sp.style.opacity = String(k);
+        sp.style.transform = `translateY(${from * (1 - k)}px) scale(${0.86 + 0.14 * k})`;
+      });
+      break;
+    }
+
+    case "rise": {
+      const st = (opt.stagger_ms || 110) / 1000, from = opt.from_px || 46;
+      const lines = el.querySelectorAll(".w");
+      lines.forEach((s, i) => {
+        const k = easeOut((lt - i * st) / 0.2);
+        s.style.opacity = String(k);
+        s.style.transform = `translateY(${from * (1 - k)}px)`;
+      });
+      break;
+    }
+
+    case "chip": {
+      const wipe = (opt.wipe_ms || 240) / 1000;
+      const k = easeOut(lt / wipe);
+      el.style.clipPath = `inset(0 ${100 - 100 * k}% 0 0)`;
+      el.style.opacity = String(clamp(lt / 0.08, 0, 1));
+      break;
+    }
+
+    case "highlight": {
+      const hlMs = (opt.hl_ms || 180) / 1000;
+      const k = easeOut((lt - 0.12) / hlMs);
+      spans.forEach(s => {
+        if (s.classList.contains("hl")) s.style.transform = `scale(${1.08 - 0.08 * k})`;
+      });
+      el.style.opacity = String(clamp(lt / 0.08, 0, 1));
+      break;
+    }
+
+    case "emoji": {
+      // 마지막 낱말 뒤에 이모지가 붙는다
+      let em = el.querySelector("#emoji");
+      if (!em) { em = document.createElement("span"); em.id = "emoji"; em.textContent = opt.glyph || "🔥"; el.appendChild(em); }
+      const k = easeOutBack((lt - (opt.delay_ms || 260) / 1000) / 0.22);
+      em.style.opacity = String(clamp(k, 0, 1));
+      em.style.transform = `scale(${0.4 + 0.6 * k}) rotate(${(1 - k) * -12}deg)`;
+      break;
+    }
+
+    case "count": {
+      const d = (opt.duration_ms || 700) / 1000;
+      const cell = el.querySelector(".num");
+      if (cell) {
+        const target = cell.textContent;
+        if (!cap.__num) {
+          const v = parseFloat(target.replace(/,/g, "")) || 0;
+          cap.__num = {v, comma: target.includes(","), dec: (target.split(".")[1] || "").length};
+        }
+        const n = cap.__num;
+        const cur = n.v * easeOut(clamp(lt / d, 0, 1));
+        cell.textContent = n.comma
+          ? cur.toLocaleString("ko-KR", {minimumFractionDigits: n.dec, maximumFractionDigits: n.dec})
+          : cur.toFixed(n.dec);
+        cell.style.color = opt.accent || "#F0A93C";
+      }
+      break;
+    }
+
+    case "random": {
+      const maxd = (opt.max_delay_ms || 320) / 1000;
+      spans.forEach((s, i) => {
+        const d = rnd(hash(s.textContent + i) + (opt.seed || 7)) * maxd;
+        const k = easeOut((lt - d) / 0.09);
+        s.style.opacity = String(k);
+        s.style.transform = `scale(${1.2 - 0.2 * k})`;
+      });
+      break;
+    }
+
+    case "slideTop": {
+      const inMs = (opt.in_ms || 220) / 1000;
+      const k = easeOut(lt / inMs);
+      el.style.transform = `translateY(${-140 * (1 - k)}px)`;
+      el.style.opacity = String(clamp(k * 1.2, 0, 1));
+      break;
+    }
+
+    case "jelly": {
+      spans.forEach((s, i) => {
+        const seed = rnd(hash(s.textContent + i) + 3);
+        const k = easeOut((lt) / 0.26);
+        const rot = (seed - 0.5) * 16 * (1 - k);
+        const sx = 0.88 + 0.12 * k * (1 + 0.08 * Math.sin(k * 6 + seed * 6));
+        s.style.transform = `rotate(${rot}deg) scale(${sx}, ${0.94 + 0.06 * k})`;
+      });
+      break;
+    }
+
+    case "led": {
+      const period = (opt.flicker_ms || 300) / 1000;
+      const on = Math.floor(lt / period) % 2 === 0;
+      el.style.color = on ? "#FFFFFF" : (opt.accent || "#FFD966");
+      break;
+    }
+
+    case "zoomSwap": {
+      const inMs = (opt.in_ms || 240) / 1000;
+      const k = easeOut(lt / inMs);
+      el.style.transform = `scale(${1.65 - 0.65 * k})`;
+      el.style.opacity = String(0.5 + 0.5 * k);
+      break;
+    }
+
+    case "colorFill": {
+      const inMs = (opt.in_ms || 400) / 1000;
+      const k = easeOut((lt - 0.12) / inMs);
+      spans.forEach(s => { if (!s.classList.contains("hl")) s.style.color = mix("#FFFFFF", opt.accent || "#F0A93C", k); });
+      break;
+    }
+  }
+}
+
+function mix(a, b, k){
+  const pa = [1,3,5].map(i => parseInt(a.slice(i,i+2),16));
+  const pb = [1,3,5].map(i => parseInt(b.slice(i,i+2),16));
+  return "#" + pa.map((v,i) => Math.round(v + (pb[i]-v)*k).toString(16).padStart(2,"0")).join("");
+}
+
+// 프레임 모드: __frameAt(t)로 특정 시각을 그린다. 미리보기: requestAnimationFrame
+window.__frameAt = t => { renderAt(t); return true; };
+window.__duration = () => Number(S.duration || 5);
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.SCRIPT) { build(); renderAt(0); }
+});
+</script>
+</body>
+</html>

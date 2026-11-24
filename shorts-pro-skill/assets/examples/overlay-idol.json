@@ -1,0 +1,22 @@
+{
+  "duration": 6.0,
+  "title": {
+    "badge": "카메라가 놓친",
+    "badge_color": "#2F6BFF",
+    "text": [{"t": "오른쪽 ", "c": "#FFFFFF"}, {"t": "4명 칼군무", "c": "#7C5CFF"}],
+    "start": 0, "end": 6
+  },
+  "corner": [
+    {"start": 0, "end": 2.4, "left": "10.25 인기가요 풀캠", "right": "@choiaejjing"},
+    {"start": 2.4, "end": 6.0, "left": "10.24 음악중심", "right": "@choiaejjing"}
+  ],
+  "comments": [
+    {"start": 0.4, "end": 2.4, "handle": "@kkk_123", "likes": "1.2천",
+     "text": "이 구간만 무한반복 중입니다", "accent": "무한반복"}
+  ],
+  "subtitles": [
+    {"start": 0.3, "end": 2.4, "text": "카메라가 놓친", "style": "pop-bounce"},
+    {"start": 2.4, "end": 4.4, "text": "오른쪽 4명 칼군무", "style": "chip-wipe", "highlight": "칼군무"},
+    {"start": 4.4, "end": 6.0, "text": "조회수 120만", "style": "count-up"}
+  ]
+}

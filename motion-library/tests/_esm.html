@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>ESM import 테스트</title></head>
+<body>
+<script type="module">
+  window.__esm = { ok: false };
+  try {
+    const mod = await import('../motions.esm.js');
+    window.__esm = {
+      ok: true,
+      version: mod.VERSION,
+      presets: Object.keys(mod.presets).length,
+      themes: Object.keys(mod.themes).length,
+      hasDraw: typeof mod.drawFrame === 'function',
+      defaultSame: mod.default === globalThis.KoreanMotion
+    };
+  } catch (e) {
+    window.__esm = { ok: false, error: String(e) };
+  }
+</script>
+</body>
+</html>

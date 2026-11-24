@@ -1,0 +1,519 @@
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🎞️</span>
+    <div>
+      <h1>쇼츠 에디터</h1>
+      <p>Shorts · Reels 세로 영상 바로 편집</p>
+    </div>
+  </div>
+  <button class="icon-btn" id="btnHelp" aria-label="도움말">?</button>
+</header>
+
+<main class="layout">
+  <!-- ================= PREVIEW ================= -->
+  <section class="stage">
+    <div class="frame-wrap">
+      <canvas id="preview" width="720" height="1280" aria-label="영상 미리보기"></canvas>
+      <div class="rec-badge" id="recBadge" hidden><i></i>REC</div>
+      <button class="expand-btn" id="btnExpand" aria-label="미리보기 크게 보기" title="크게 보기">⤢</button>
+    </div>
+
+    <div class="transport">
+      <button class="play" id="btnPlay" aria-label="재생/일시정지">▶</button>
+      <div class="timebar" id="timebar" role="slider" aria-label="재생 위치" tabindex="0">
+        <div class="fill" id="timeFill"></div>
+      </div>
+      <div class="time" id="timeLabel">0:00 / 0:15</div>
+      <div class="speed-chip" id="speedChip">1.0x</div>
+    </div>
+
+    <div class="stage-actions">
+      <button class="btn ghost" id="btnDemo">🎬 샘플 데모</button>
+      <label class="btn primary file-btn">📱 영상 선택
+        <input type="file" id="fileInputTop" accept="video/*">
+      </label>
+      <button class="btn ghost" id="btnSafe">🔲 안전 영역</button>
+    </div>
+    <div class="src-info" id="srcInfo">샘플 데모 영상 · 0:15 · 1280×720</div>
+  </section>
+
+  <!-- ================= CONTROLS ================= -->
+  <section class="controls">
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab on" data-tab="video" role="tab">영상</button>
+      <button class="tab" data-tab="color" role="tab">색감</button>
+      <button class="tab" data-tab="frame" role="tab">화면</button>
+      <button class="tab" data-tab="overlay" role="tab">오버레이</button>
+      <button class="tab" data-tab="export" role="tab">내보내기</button>
+    </nav>
+
+    <div class="panels">
+      <!-- ---------- 영상 ---------- -->
+      <div class="panel on" id="panel-video">
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>소스 영상</h2>
+          <p class="hint">휴대폰 촬영본, 화면 녹화, 다운로드한 mp4 모두 됩니다. 파일은 서버로 보내지 않고 브라우저 안에서만 처리돼요.</p>
+          <div class="btn-row">
+            <label class="btn primary file-btn">영상 파일 선택
+              <input type="file" id="fileInput" accept="video/*">
+            </label>
+            <button class="btn ghost" id="btnDemo2">샘플 데모로 시작</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>구간 자르기</h2>
+          <div class="trim-line">
+            <span class="trim-val">시작 <b id="trimStartLabel">0:00</b></span>
+            <span class="trim-val center">길이 <b id="trimDurLabel">0:15</b></span>
+            <span class="trim-val">끝 <b id="trimEndLabel">0:15</b></span>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="trimStart">시작 지점</label><output id="outTrimStart">0:00</output></div>
+            <input type="range" id="trimStart" min="0" max="15" step="0.1" value="0" aria-label="시작 지점">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="trimEnd">끝 지점</label><output id="outTrimEnd">0:15</output></div>
+            <input type="range" id="trimEnd" min="0" max="15" step="0.1" value="15" aria-label="끝 지점">
+          </div>
+          <div class="btn-row">
+            <button class="btn ghost sm" id="btnFullRange">전체 구간</button>
+            <button class="btn ghost sm" id="btnTrimToNow">현재 위치부터</button>
+          </div>
+          <p class="hint">내보내기 영상은 이 구간만 담깁니다. 최소 0.4초 이상이어야 해요.</p>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>재생 속도</h2>
+          <div class="seg" id="segSpeed">
+            <button data-speed="0.5">0.5x</button>
+            <button data-speed="0.75">0.75x</button>
+            <button data-speed="1" class="on">1.0x</button>
+            <button data-speed="1.25">1.25x</button>
+            <button data-speed="1.5">1.5x</button>
+            <button data-speed="2">2.0x</button>
+          </div>
+
+          <div class="row speed-fine">
+            <div class="row-head"><label for="speedFine">미세 배속 (0.01 단위)</label><output id="outSpeedFine">1.0x</output></div>
+            <input type="range" id="speedFine" min="0.5" max="2" step="0.01" value="1" aria-label="미세 배속">
+          </div>
+          <div class="chips micro" id="microSpeed" role="group" aria-label="미세 배속 빠른 선택">
+            <button type="button" class="chip" data-speed="0.98">0.98x</button>
+            <button type="button" class="chip" data-speed="1.01">1.01x</button>
+            <button type="button" class="chip" data-speed="1.02">1.02x</button>
+            <button type="button" class="chip" data-speed="1.03">1.03x</button>
+            <button type="button" class="chip" data-speed="1.05">1.05x</button>
+          </div>
+          <p class="hint" id="speedOutHint">이 배속으로 내보내면 0:15.0 · 소리는 음정 유지</p>
+          <p class="hint">위 버튼과 미세 배속 슬라이더는 서로 맞춰집니다. 1.01x처럼 0.01 단위 값도 미리보기와 내보내기 영상에 똑같이 적용돼요. (소리는 음정 유지 — 아래 ‘목소리 다듬기’에서 끌 수 있어요)</p>
+
+          <div class="field">
+            <label>스피드 램프 (한 클립 안에서 속도 변화)</label>
+            <div class="chips" id="segRamp" role="group" aria-label="스피드 램프 프리셋">
+              <button type="button" class="chip on" data-v="none">없음</button>
+              <button type="button" class="chip" data-v="up">서서히 빠르게</button>
+              <button type="button" class="chip" data-v="down">서서히 느리게</button>
+              <button type="button" class="chip" data-v="highlight">하이라이트 감속</button>
+              <button type="button" class="chip" data-v="jump">점프 가속</button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="rampStrength">램프 강도</label><output id="outRampStrength">45%</output></div>
+            <input type="range" id="rampStrength" min="0" max="80" step="5" value="45" aria-label="스피드 램프 강도">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="rampSpan">램프 구간 (클립의 몇 %에서 변할지)</label><output id="outRampSpan">100%</output></div>
+            <input type="range" id="rampSpan" min="30" max="100" step="5" value="100" aria-label="스피드 램프 구간">
+          </div>
+          <p class="hint" id="rampHint">램프를 고르면 한 클립 안에서 속도가 1.0x 기준으로 서서히 변합니다(미리보기·내보내기 공통).</p>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>자동 컷편집 (무음 제거)</h2>
+          <div class="switch-row">
+            <div><span class="label">무음 구간 자동 제거</span><span class="sub">말이 없는 구간을 찾아 건너뛰고 이어 붙임</span></div>
+            <input type="checkbox" class="sw" data-bind="autocut.on" aria-label="무음 구간 자동 제거">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="acThr">무음 기준</label><output id="outAcThr">-38 dB</output></div>
+            <input type="range" id="acThr" min="-60" max="-20" step="1" value="-38" aria-label="무음 기준 데시벨">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="acMin">최소 무음 길이</label><output id="outAcMin">0.40초</output></div>
+            <input type="range" id="acMin" min="0.2" max="1.5" step="0.05" value="0.4" aria-label="최소 무음 길이">
+          </div>
+          <div class="btn-row"><button class="btn ghost sm" id="btnAnalyze">무음 분석</button></div>
+          <p class="hint" id="acInfo">영상을 선택한 뒤 무음 분석을 눌러 주세요. (샘플 데모에는 소리가 없어요)</p>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>오디오 · 페이드 · BGM</h2>
+          <div class="row">
+            <div class="row-head"><label for="audVol">원본 소리 크기</label><output data-out="audio.vol" data-unit="%">100%</output></div>
+            <input type="range" id="audVol" data-bind="audio.vol" min="0" max="150" step="1" value="100">
+          </div>
+          <div class="field">
+            <label>페이드 인 (소리 + 화면)</label>
+            <div class="seg tiny" id="segFadeIn">
+              <button data-v="0" class="on">없음</button>
+              <button data-v="0.3">0.3초</button>
+              <button data-v="0.5">0.5초</button>
+              <button data-v="1">1.0초</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>페이드 아웃 (소리 + 화면)</label>
+            <div class="seg tiny" id="segFadeOut">
+              <button data-v="0" class="on">없음</button>
+              <button data-v="0.3">0.3초</button>
+              <button data-v="0.5">0.5초</button>
+              <button data-v="1">1.0초</button>
+            </div>
+          </div>
+          <div class="switch-row">
+            <div><span class="label">배경음악 (BGM)</span><span class="sub" id="bgmName">파일을 추가하면 켜집니다</span></div>
+            <input type="checkbox" class="sw" data-bind="bgm.on" aria-label="배경음악 켜기">
+          </div>
+          <div class="btn-row">
+            <label class="btn ghost sm file-btn">🎵 BGM 파일 추가
+              <input type="file" id="bgmFile" accept="audio/*">
+            </label>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="bgmVol">BGM 크기</label><output data-out="bgm.vol" data-unit="%">30%</output></div>
+            <input type="range" id="bgmVol" data-bind="bgm.vol" min="0" max="100" step="1" value="30">
+          </div>
+          <p class="hint">페이드는 화면(검게)과 소리에 같이 적용되고 미리보기·내보내기 영상 모두에 담깁니다. BGM 파일은 기기 안에서만 읽습니다.</p>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>목소리 다듬기 · 오토더킹</h2>
+          <div class="switch-row">
+            <div><span class="label">음정 유지 (Pitch Lock)</span><span class="sub">끄면 배속을 올릴 때 목소리 음정도 같이 올라갑니다</span></div>
+            <input type="checkbox" class="sw" data-bind="pitch.lock" aria-label="음정 유지">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="pitchSemi">피치 (반음)</label><output id="outPitchSemi">0 st</output></div>
+            <input type="range" id="pitchSemi" min="-12" max="12" step="1" value="0" aria-label="피치 반음">
+          </div>
+          <div class="switch-row">
+            <div><span class="label">목소리 노이즈 제거</span><span class="sub">저음 흔들림·60Hz 험·치찰음 정리</span></div>
+            <input type="checkbox" class="sw" data-bind="denoise.on" aria-label="목소리 노이즈 제거">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="dnStrength">제거 강도</label><output id="outDnStrength">55%</output></div>
+            <input type="range" id="dnStrength" min="0" max="100" step="5" value="55" aria-label="노이즈 제거 강도">
+          </div>
+          <div class="switch-row">
+            <div><span class="label">음량 자동 맞추기 (오토 레벨링)</span><span class="sub">작은 소리와 큰 소리의 차이를 줄여 일정하게</span></div>
+            <input type="checkbox" class="sw" data-bind="level.on" aria-label="음량 자동 맞추기">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="lvStrength">레벨링 강도</label><output id="outLvStrength">55%</output></div>
+            <input type="range" id="lvStrength" min="0" max="100" step="5" value="55" aria-label="레벨링 강도">
+          </div>
+          <div class="switch-row">
+            <div><span class="label">오토더킹 (말할 때 BGM 줄이기)</span><span class="sub">목소리가 나오면 BGM을 낮추고, 조용해지면 되돌립니다</span></div>
+            <input type="checkbox" class="sw" data-bind="duck.on" aria-label="오토더킹">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="duckDepth">감쇠 정도</label><output id="outDuckDepth">32%</output></div>
+            <input type="range" id="duckDepth" min="10" max="90" step="1" value="32" aria-label="오토더킹 감쇠 정도">
+          </div>
+          <p class="hint">모두 기기 안에서 처리되고, 미리보기와 내보내기 영상의 오디오에 똑같이 적용됩니다. BGM 파일을 넣고 오토더킹을 켜면 말소리 구간에서 BGM이 자동으로 작아집니다.</p>
+        </div>
+      </div>
+
+      <!-- ---------- 색감 ---------- -->
+      <div class="panel" id="panel-color">
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>빠른 프리셋</h2>
+          <div class="chips" id="presets">
+            <button class="chip on" data-preset="기본">기본</button>
+            <button class="chip" data-preset="선명하게">선명하게</button>
+            <button class="chip" data-preset="시네마">시네마</button>
+            <button class="chip" data-preset="쿨톤">쿨톤</button>
+            <button class="chip" data-preset="웜톤">웜톤</button>
+          </div>
+          <p class="hint">프리셋을 누르면 아래 값을 한 번에 맞춰 줘요. 그 뒤에 세부 조정하면 됩니다.</p>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>세부 조정</h2>
+          <div class="row">
+            <div class="row-head"><label for="f-b">밝기</label><output data-out="filter.b" data-unit="%">100%</output></div>
+            <input type="range" id="f-b" data-bind="filter.b" min="40" max="160" step="1" value="100">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="f-c">대비</label><output data-out="filter.c" data-unit="%">100%</output></div>
+            <input type="range" id="f-c" data-bind="filter.c" min="40" max="180" step="1" value="100">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="f-s">채도</label><output data-out="filter.s" data-unit="%">100%</output></div>
+            <input type="range" id="f-s" data-bind="filter.s" min="0" max="200" step="1" value="100">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="f-h">색온도 (웜/쿨)</label><output data-out="filter.h" data-unit="°">0°</output></div>
+            <input type="range" id="f-h" data-bind="filter.h" min="-40" max="40" step="1" value="0">
+          </div>
+          <div class="btn-row"><button class="btn ghost sm" id="btnColorReset">색감 초기화</button></div>
+        </div>
+      </div>
+
+      <!-- ---------- 화면 ---------- -->
+      <div class="panel" id="panel-frame">
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>반전 · 배경</h2>
+          <div class="switch-row">
+            <div><span class="label">좌우 반전 (미러링)</span><span class="sub">셀카가 거울처럼 보일 때 켜세요</span></div>
+            <input type="checkbox" class="sw" data-bind="flip" aria-label="좌우 반전">
+          </div>
+          <div class="switch-row">
+            <div><span class="label">배경 블러 채우기</span><span class="sub">가로 영상의 위아래를 같은 영상의 블러로 채워요</span></div>
+            <input type="checkbox" class="sw" data-bind="blurBg" checked aria-label="배경 블러 채우기">
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>프레임 비율</h2>
+          <div class="seg" id="segAspect">
+            <button data-aspect="9:16" class="on">9:16 쇼츠/릴스</button>
+            <button data-aspect="16:9">16:9 가로</button>
+          </div>
+          <div class="switch-row">
+            <div><span class="label">안전 영역 가이드</span><span class="sub">쇼츠·릴스 UI에 가려지는 부분을 표시 (저장 영상엔 안 들어감)</span></div>
+            <input type="checkbox" class="sw" data-bind="safe" aria-label="안전 영역 가이드">
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>확대 · 위치</h2>
+          <div class="row">
+            <div class="row-head"><label for="zoom">확대</label><output data-out="zoom" data-unit="%">100%</output></div>
+            <input type="range" id="zoom" data-bind="zoom" min="100" max="250" step="1" value="100">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="offX">좌우 이동</label><output data-out="offX" data-unit="%">0%</output></div>
+            <input type="range" id="offX" data-bind="offX" min="-50" max="50" step="1" value="0">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="offY">위아래 이동</label><output data-out="offY" data-unit="%">0%</output></div>
+            <input type="range" id="offY" data-bind="offY" min="-50" max="50" step="1" value="0">
+          </div>
+          <div class="btn-row"><button class="btn ghost sm" id="btnPosReset">확대·위치 초기화</button></div>
+        </div>
+      </div>
+
+      <!-- ---------- 오버레이 ---------- -->
+      <div class="panel" id="panel-overlay">
+        <p class="hint" style="margin:0 0 10px">쇼츠에서 반응 좋은 자막·카드 오버레이입니다. 각 항목의 스위치로 켜고 끌 수 있어요.</p>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>글꼴 · 자간 · 행간</h2>
+          <div class="field">
+            <label>폰트</label>
+            <div class="seg tiny wrap" id="segFont">
+              <button data-v="sans" class="on">기본 고딕</button>
+              <button data-v="title">굵은 타이틀</button>
+              <button data-v="round">둥근 손글씨</button>
+              <button data-v="serif">명조·감성</button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="ls">자간</label><output id="outLs">0px</output></div>
+            <input type="range" id="ls" min="-4" max="12" step="1" value="0" aria-label="자간">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="lh">행간</label><output id="outLh">1.45</output></div>
+            <input type="range" id="lh" min="1" max="1.8" step="0.05" value="1.45" aria-label="행간">
+          </div>
+          <p class="hint">제목·댓글 카드·자막에 함께 적용됩니다. 글꼴은 기기에 설치된 폰트 중 가장 가까운 것으로 표시돼요.</p>
+        </div>
+
+        <details class="card" open>
+          <summary>
+            <span class="sum-title">상단 제목 배지<span class="tag">고정</span></span>
+            <span style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" class="sw" data-bind="ov.title.on" checked aria-label="상단 제목 켜기">
+              <span class="chev"></span>
+            </span>
+          </summary>
+          <div class="acc-body">
+            <div class="field"><label>배지 텍스트</label><input type="text" data-bind="ov.title.badge" maxlength="14" value="HOT"></div>
+            <div class="field inline"><label>배지 색</label><input type="color" data-bind="ov.title.badgeColor" value="#ff2d55"></div>
+            <div class="field"><label>제목 (흰색 줄)</label><input type="text" data-bind="ov.title.title" maxlength="40" value="이 장면 하나로"></div>
+            <div class="field"><label>강조 문구 (색상 줄)</label><input type="text" data-bind="ov.title.hl" maxlength="40" value="난리 났다"></div>
+            <div class="field inline"><label>강조 색</label><input type="color" data-bind="ov.title.hlColor" value="#ffe14d"></div>
+          </div>
+        </details>
+
+        <details class="card" open>
+          <summary>
+            <span class="sum-title">유튜브 댓글 카드</span>
+            <span style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" class="sw" data-bind="ov.comment.on" checked aria-label="댓글 카드 켜기">
+              <span class="chev"></span>
+            </span>
+          </summary>
+          <div class="acc-body">
+            <div class="field"><label>댓글 아이디</label><input type="text" data-bind="ov.comment.user" maxlength="24" value="daily_kpop"></div>
+            <div class="field"><label>하트 수</label><input type="text" data-bind="ov.comment.hearts" maxlength="10" value="1.2만"></div>
+            <div class="field"><label>댓글 내용</label><input type="text" data-bind="ov.comment.text" maxlength="80" value="소름 돋았어요 이건 진짜"></div>
+            <div class="field"><label>강조 단어</label><input type="text" data-bind="ov.comment.hl" maxlength="20" value="소름"></div>
+          </div>
+        </details>
+
+        <details class="card" open>
+          <summary>
+            <span class="sum-title">코너 라벨 · 워터마크</span>
+            <span style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" class="sw" data-bind="ov.corner.on" checked aria-label="코너 라벨 켜기">
+              <span class="chev"></span>
+            </span>
+          </summary>
+          <div class="acc-body">
+            <div class="field"><label>왼쪽 위 · 방송/날짜 라벨</label><input type="text" data-bind="ov.corner.left" maxlength="30" value="연예뉴스 | 2026.11.24"></div>
+            <div class="field"><label>오른쪽 위 · 채널명 워터마크</label><input type="text" data-bind="ov.corner.right" maxlength="24" value="@my_shorts"></div>
+          </div>
+        </details>
+
+        <details class="card" open>
+          <summary>
+            <span class="sum-title">하단 자막</span>
+            <span style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" class="sw" data-bind="ov.sub.on" checked aria-label="하단 자막 켜기">
+              <span class="chev"></span>
+            </span>
+          </summary>
+          <div class="acc-body">
+            <div class="field">
+              <label>모션 스타일 · 한국어 모션 14종</label>
+              <div class="seg tiny wrap" id="segSubStyle">
+                <button data-v="none">없음</button>
+                <button data-v="outline-basic">기본 외곽선</button>
+                <button data-v="chip-wipe" class="on">칩 와이프</button>
+                <button data-v="pop-bounce">팝 바운스</button>
+                <button data-v="typewriter">타이핑</button>
+                <button data-v="slide-in-top">슬라이드 인</button>
+                <button data-v="zoom-swap">줌 스왑</button>
+                <button data-v="line-rise">줄 올라오기</button>
+                <button data-v="shift-key">시프트 키</button>
+                <button data-v="word-highlight">단어 강조</button>
+                <button data-v="karaoke-fill">노래방 채우기</button>
+                <button data-v="count">숫자 카운트</button>
+                <button data-v="shake">셰이크</button>
+                <button data-v="glitch">글리치</button>
+                <button data-v="char-jelly">글자 젤리</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>테마 (색·외곽선)</label>
+              <div class="seg tiny" id="segSubTheme">
+                <button data-v="reels-dark" class="on">릴스 다크</button>
+                <button data-v="news-dark">뉴스</button>
+                <button data-v="pastel-soft">파스텔</button>
+                <button data-v="mono-hud">모노</button>
+                <button data-v="variety-pop">예능</button>
+              </div>
+            </div>
+            <div class="field"><label>자막 내용</label><input type="text" data-bind="ov.sub.text" maxlength="90" value="여기서 반전 있습니다"></div>
+            <div class="field inline"><label>자막 색</label><input type="color" data-bind="ov.sub.color" value="#ffffff"></div>
+            <p class="hint">재생할 때 모션이 보이고, 내보낸 영상에도 그대로 담깁니다. 단어 강조·노래방은 자막 전체 길이에 맞춰 단어 차례가 흘러갑니다. 폰트·자간·행간은 위 <b>폰트</b> 설정을 따릅니다.</p>
+          </div>
+        </details>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>효과음 (SFX)</h2>
+          <div class="field">
+            <label>효과음</label>
+            <div class="seg tiny wrap" id="segSfx">
+              <button data-v="none" class="on">없음</button>
+              <button data-v="pop">팝</button>
+              <button data-v="ding">띠링</button>
+              <button data-v="whoosh">스우시</button>
+              <button data-v="shutter">찰칵</button>
+              <button data-v="punch">타격</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>넣는 위치</label>
+            <div class="seg tiny" id="segSfxAt">
+              <button data-v="start" class="on">구간 시작마다</button>
+              <button data-v="sub">자막 등장 시</button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="sfxVol">효과음 크기</label><output data-out="sfx.vol" data-unit="%">70%</output></div>
+            <input type="range" id="sfxVol" data-bind="sfx.vol" min="0" max="100" step="1" value="70">
+          </div>
+          <div class="btn-row"><button class="btn ghost sm" id="btnSfxPreview">🔊 미리 듣기</button></div>
+          <p class="hint">효과음은 브라우저에서 바로 합성합니다(외부 파일 없음). 미리보기와 내보낸 영상 소리에 함께 섞입니다.</p>
+        </div>
+      </div>
+
+      <!-- ---------- 내보내기 ---------- -->
+      <div class="panel" id="panel-export">
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>영상으로 저장</h2>
+          <div class="field">
+            <label>화질</label>
+            <div class="seg" id="segQuality">
+              <button data-q="720">720p (가볍게)</button>
+              <button data-q="1080" class="on">1080p (고화질)</button>
+            </div>
+          </div>
+          <button class="btn primary big" id="btnExport">⬇︎ 영상 내보내기 (.webm)</button>
+          <div class="btn-row"><button class="btn ghost" id="btnCancelExport" hidden>내보내기 취소</button></div>
+          <div class="progress" id="progressWrap" hidden>
+            <div class="bar"><div class="pf" id="progressFill"></div></div>
+            <div class="pstat" id="progressText">준비 중…</div>
+          </div>
+          <p class="hint" id="capNote"></p>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>PC에서 MP4로 뽑기</h2>
+          <p class="hint">지금 고른 <b>자막 모션·테마·폰트·자간·행간</b>을 <b>shorts-job.json</b> 한 파일로 저장합니다. PC에서 <code>python3 render_mp4.py --job shorts-job.json</code> 를 실행하면 미리보기와 같은 자막이 구워진 MP4가 만들어집니다.</p>
+          <div class="btn-row"><button class="btn ghost" id="btnSaveJob">🧾 MP4 작업 JSON 저장</button></div>
+          <p class="hint" id="jobNote">영상 경로는 <b>shorts-source.mp4</b>로 적혀 있으니, 실제 영상 파일 이름에 맞게 고쳐 쓰세요. (자막 시간은 자르기·배속이 적용된 결과 기준)</p>
+        </div>
+
+        <div class="card" id="resultCard" hidden>
+          <h2 class="card-title"><span class="dot"></span>방금 만든 영상</h2>
+          <video id="resultVideo" controls playsinline></video>
+          <div class="btn-row">
+            <a class="btn primary" id="dlLink" download>다시 저장</a>
+            <span id="resultMeta"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title"><span class="dot"></span>알아두면 좋은 점</h2>
+          <ul class="caveat">
+            <li>브라우저가 <b>실시간으로 녹화</b>하는 방식이라, 내보내는 시간만큼 화면을 켜 두셔야 해요. (15초 영상 → 약 15초)</li>
+            <li>결과물은 <b>.webm</b> 파일이에요. 유튜브 쇼츠 웹 업로드는 그대로 되고, 휴대폰 앱 업로드나 인스타 릴스는 mp4를 선호하니 필요하면 갤러리·변환 앱에서 mp4로 바꿔 주세요.</li>
+            <li>사파리(아이폰)는 webm 저장·재생이 제한될 수 있어요. 아이폰은 Chrome 앱 사용을 권장합니다.</li>
+            <li>오디오 녹음이 막힌 브라우저에서는 <b>무음</b>으로 저장되고 그 사실을 알려 드려요.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="helpModal" hidden>
+  <div class="modal-box">
+    <h3>3분 사용법</h3>
+    <ol>
+      <li><b>샘플 데모</b>를 눌러 모든 기능을 바로 시험해 보세요. 영상 없이도 됩니다.</li>
+      <li><b>영상 선택</b>으로 휴대폰 영상을 불러오면 9:16 미리보기에 맞춰집니다.</li>
+      <li><b>영상</b> 탭에서 구간과 속도를, <b>색감</b> 탭에서 프리셋을, <b>화면</b> 탭에서 반전·확대·블러를 조정하세요.</li>
+      <li><b>오버레이</b> 탭에서 제목·댓글 카드·코너 라벨·자막을 넣습니다.</li>
+      <li><b>내보내기</b> 탭에서 화질을 고르고 저장하면 .webm 파일이 내려받아집니다.</li>
+    </ol>
+    <button class="btn primary" id="btnCloseHelp" style="width:100%">알겠어요</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>

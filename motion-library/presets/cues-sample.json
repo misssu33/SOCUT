@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "fps": 30,
+  "note": "샘플 큐. preset/theme을 큐마다 지정할 수 있고, 없으면 --preset/--theme 기본값을 쓴다. words는 발화 타이밍(초).",
+  "cues": [
+    {
+      "id": "c0",
+      "start": 0.3,
+      "end": 2.6,
+      "text": "카메라가 놓친 오른쪽 4명 칼군무",
+      "preset": "pop-bounce",
+      "theme": "reels-dark"
+    },
+    {
+      "id": "c1",
+      "start": 2.75,
+      "end": 4.5,
+      "text": "조회수 120만 돌파",
+      "preset": "count",
+      "theme": "news-dark",
+      "words": [
+        { "w": "조회수", "s": 2.75, "e": 3.3 },
+        { "w": "120만", "s": 3.3, "e": 3.9 },
+        { "w": "돌파", "s": 3.9, "e": 4.4 }
+      ]
+    },
+    {
+      "id": "c2",
+      "start": 4.65,
+      "end": 6.3,
+      "text": "이 장면 하나로 끝났습니다",
+      "preset": "chip-wipe",
+      "theme": "mono-hud"
+    },
+    {
+      "id": "c3",
+      "start": 6.45,
+      "end": 7.9,
+      "text": "저장해 두세요",
+      "preset": "typewriter",
+      "theme": "variety-pop"
+    }
+  ]
+}

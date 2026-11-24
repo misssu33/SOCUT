@@ -1,0 +1,13 @@
+{
+  "video": "test/media/sample-9x16.mp4",
+  "cues": "presets/cues-sample.json",
+  "preset": "pop-bounce",
+  "theme": "reels-dark",
+  "out": "out/job-result.mp4",
+  "engine": "both",
+  "fps": 30,
+  "size": "1080x1920",
+  "crf": 18,
+  "scrim": false,
+  "note": "render_mp4.py --job presets/job-sample.json 로 실행한다. 경로는 이 파일 폴더 기준이 아니라 motion-library/ 기준."
+}

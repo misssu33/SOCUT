@@ -1,0 +1,699 @@
+{
+  "schema": "korean-motion-library/presets@1",
+  "version": "1.0.0",
+  "updated": "2026-11-24",
+  "locale": "ko-KR",
+  "notes": [
+    "이 파일이 프리셋·테마·안전영역의 단일 기준(single source of truth)이다.",
+    "motions.js(브라우저 Canvas 2D)와 make_ass.py(FFmpeg·libass)가 같은 숫자를 읽는다.",
+    "단위 규칙: 길이(dur/stagger/delay)는 초, dy/dx/outline/blur는 글자크기(em) 배수, scale은 배수, rot은 도(deg).",
+    "mode는 Canvas 렌더 경로와 ASS 컴파일 경로가 1:1로 대응한다(ARCHITECTURE.md 3장 표 참고)."
+  ],
+  "canvas": {
+    "W": 1080,
+    "H": 1920,
+    "fps": 30,
+    "safe": {
+      "top_organic": 220,
+      "top_conservative": 270,
+      "title_safe": {
+        "x0": 70,
+        "y0": 270,
+        "x1": 1010,
+        "y1": 1240
+      },
+      "caption_band": {
+        "x0": 140,
+        "y0": 990,
+        "x1": 940,
+        "y1": 1240
+      },
+      "rail": {
+        "x0": 940,
+        "y0": 1000,
+        "x1": 1080,
+        "y1": 1750
+      },
+      "bottom_conservative": 1250,
+      "bottom_organic": 1500,
+      "side": 65
+    }
+  },
+  "themes": {
+    "reels-dark": {
+      "label": "릴스 다크",
+      "note": "흰 글자 + 진한 외곽선 + 핑크 포인트. 가장 무난한 기본값.",
+      "font": "\"Noto Sans CJK KR\", \"Apple SD Gothic Neo\", \"Malgun Gothic\", sans-serif",
+      "weight": 800,
+      "sizeRatio": 0.0575,
+      "lineHeight": 1.26,
+      "letterSpacing": -0.012,
+      "colors": {
+        "text": "#FFFFFF",
+        "outline": "#0B0B0F",
+        "accent": "#FF3D6E",
+        "onAccent": "#FFFFFF",
+        "chip": "rgba(9,12,18,0.80)",
+        "chipAccentBar": "#FF3D6E",
+        "shadow": "rgba(0,0,0,0.72)"
+      },
+      "outlineEm": 0.085,
+      "shadowEm": 0.035,
+      "upper": false
+    },
+    "news-dark": {
+      "label": "뉴스 다크",
+      "note": "노란 포인트 + 얇은 외곽선. 정보 전달·뉴스·리뷰 영상.",
+      "font": "\"Noto Sans CJK KR\", \"Apple SD Gothic Neo\", \"Malgun Gothic\", sans-serif",
+      "weight": 700,
+      "sizeRatio": 0.0535,
+      "lineHeight": 1.3,
+      "letterSpacing": -0.006,
+      "colors": {
+        "text": "#F7F7F5",
+        "outline": "#101114",
+        "accent": "#FFD60A",
+        "onAccent": "#141414",
+        "chip": "rgba(14,16,20,0.86)",
+        "chipAccentBar": "#FFD60A",
+        "shadow": "rgba(0,0,0,0.68)"
+      },
+      "outlineEm": 0.062,
+      "shadowEm": 0.028,
+      "upper": false
+    },
+    "pastel-soft": {
+      "label": "파스텔 라이트",
+      "note": "크림 칩 위에 먹색 글자. 밝은 영상·일상 브이로그.",
+      "font": "\"Noto Sans CJK KR\", \"Apple SD Gothic Neo\", \"Malgun Gothic\", sans-serif",
+      "weight": 700,
+      "sizeRatio": 0.054,
+      "lineHeight": 1.34,
+      "letterSpacing": -0.004,
+      "colors": {
+        "text": "#1B1B22",
+        "outline": "#FFF6E9",
+        "accent": "#F0577B",
+        "onAccent": "#FFFFFF",
+        "chip": "rgba(255,246,233,0.92)",
+        "chipAccentBar": "#F0577B",
+        "shadow": "rgba(90,70,60,0.28)"
+      },
+      "outlineEm": 0.0,
+      "shadowEm": 0.02,
+      "upper": false
+    },
+    "mono-hud": {
+      "label": "모노 HUD",
+      "note": "자간을 넓힌 테크 느낌. 제품·데이터·튜토리얼.",
+      "font": "\"Noto Sans CJK KR\", \"Apple SD Gothic Neo\", \"Malgun Gothic\", sans-serif",
+      "weight": 700,
+      "sizeRatio": 0.0505,
+      "lineHeight": 1.34,
+      "letterSpacing": 0.02,
+      "colors": {
+        "text": "#F2FFFB",
+        "outline": "#04140F",
+        "accent": "#5BF0C2",
+        "onAccent": "#04140F",
+        "chip": "rgba(4,20,15,0.80)",
+        "chipAccentBar": "#5BF0C2",
+        "shadow": "rgba(0,0,0,0.60)"
+      },
+      "outlineEm": 0.055,
+      "shadowEm": 0.03,
+      "upper": false
+    },
+    "variety-pop": {
+      "label": "예능 팝",
+      "note": "두꺼운 흰 테두리 + 노란 글자 + 빨간 외곽. 예능·리액션 순간에만.",
+      "font": "\"Noto Sans CJK KR\", \"Apple SD Gothic Neo\", \"Malgun Gothic\", sans-serif",
+      "weight": 800,
+      "sizeRatio": 0.066,
+      "lineHeight": 1.2,
+      "letterSpacing": -0.018,
+      "colors": {
+        "text": "#FFD400",
+        "outline": "#B3113D",
+        "accent": "#FFFFFF",
+        "onAccent": "#B3113D",
+        "chip": "rgba(0,0,0,0)",
+        "chipAccentBar": "#FFD400",
+        "halo": "#FFFFFF",
+        "shadow": "rgba(0,0,0,0.55)"
+      },
+      "outlineEm": 0.16,
+      "haloEm": 0.075,
+      "shadowEm": 0.05,
+      "upper": false
+    }
+  },
+  "presets": {
+    "none": {
+      "label": "자막 없음",
+      "note": "자막을 끄는 상태값. 렌더러는 아무것도 그리지 않는다.",
+      "mode": "none",
+      "enter": {
+        "dur": 0,
+        "ease": "linear",
+        "from": {}
+      },
+      "hold": {},
+      "exit": {
+        "dur": 0,
+        "ease": "linear",
+        "to": {}
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {},
+      "ass": {
+        "mode": "none"
+      }
+    },
+    "outline-basic": {
+      "label": "기본 외곽선",
+      "note": "가장 조용한 기본값. 0.16초 페이드 + 0.1em 상승 진입, 짧은 페이드 아웃.",
+      "mode": "line",
+      "enter": {
+        "dur": 0.16,
+        "ease": "outSoft",
+        "from": {
+          "opacity": 0,
+          "dy": 0.1
+        }
+      },
+      "hold": {
+        "breathe": 0.0
+      },
+      "exit": {
+        "dur": 0.12,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "line",
+        "fadeIn": 80,
+        "fadeOut": 60
+      }
+    },
+    "slide-in-top": {
+      "label": "위에서 내려오기",
+      "note": "1.1em 위에서 살짝 튕기며 내려온다. 첫 큐·훅에 적합.",
+      "mode": "line",
+      "enter": {
+        "dur": 0.34,
+        "ease": "backOut",
+        "from": {
+          "opacity": 0,
+          "dy": -1.1,
+          "scale": 0.98
+        }
+      },
+      "hold": {
+        "bob": 0.012,
+        "bobDur": 2.6
+      },
+      "exit": {
+        "dur": 0.2,
+        "ease": "in",
+        "to": {
+          "opacity": 0,
+          "dy": -0.35
+        }
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "line",
+        "moveFrom": [
+          0,
+          -1.1
+        ],
+        "enterMs": 340,
+        "fadeIn": 120,
+        "fadeOut": 180
+      }
+    },
+    "zoom-swap": {
+      "label": "줌 교체",
+      "note": "1.22배에서 줄어들며 정착, 끝날 때 0.9배로 빠진다. 장면 전환형 자막.",
+      "mode": "line",
+      "enter": {
+        "dur": 0.3,
+        "ease": "expoOut",
+        "from": {
+          "opacity": 0,
+          "scale": 1.22
+        }
+      },
+      "hold": {
+        "breathe": 0.008,
+        "breatheDur": 2.0
+      },
+      "exit": {
+        "dur": 0.18,
+        "ease": "in",
+        "to": {
+          "opacity": 0,
+          "scale": 0.9
+        }
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "line",
+        "scaleFrom": 1.22,
+        "enterMs": 300,
+        "fadeIn": 90,
+        "fadeOut": 90
+      }
+    },
+    "chip-wipe": {
+      "label": "칩 와이프",
+      "note": "어두운 칩 배경이 왼쪽에서 오른쪽으로 쓸리듯 깔린 뒤 글자가 뜬다.",
+      "mode": "chip",
+      "enter": {
+        "dur": 0.28,
+        "ease": "outSoft",
+        "from": {
+          "wipe": 0,
+          "textDelay": 0.1,
+          "textDur": 0.12
+        }
+      },
+      "hold": {},
+      "exit": {
+        "dur": 0.2,
+        "ease": "in",
+        "to": {
+          "wipe": 0,
+          "textDelay": 0,
+          "textDur": 0.08
+        }
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {
+        "highlight": "none",
+        "chipPadEm": 0.62,
+        "chipRadiusEm": 0.3,
+        "accentBar": true
+      },
+      "ass": {
+        "mode": "chip",
+        "wipeMs": 280,
+        "textDelayMs": 100,
+        "fadeOut": 100
+      }
+    },
+    "line-rise": {
+      "label": "줄마다 라이즈",
+      "note": "줄 단위로 0.55em 아래에서 차례로 올라온다. 2줄 자막에서 특히 좋다.",
+      "mode": "lines",
+      "enter": {
+        "dur": 0.3,
+        "ease": "outSoft",
+        "from": {
+          "opacity": 0,
+          "dy": 0.55
+        }
+      },
+      "hold": {},
+      "exit": {
+        "dur": 0.18,
+        "ease": "in",
+        "to": {
+          "opacity": 0,
+          "dy": -0.18
+        }
+      },
+      "per": "line",
+      "stagger": 0.06,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "lines",
+        "lineDelayMs": 60,
+        "fadeIn": 120,
+        "fadeOut": 100
+      }
+    },
+    "pop-bounce": {
+      "label": "팝·바운스",
+      "note": "낱말마다 0.55배에서 튕겨 오른다(1.22배 오버슈트). 숏폼 기본값.",
+      "mode": "word",
+      "enter": {
+        "dur": 0.34,
+        "ease": "backOut",
+        "from": {
+          "opacity": 0,
+          "scale": 0.55,
+          "dy": 0.18,
+          "rot": -4
+        }
+      },
+      "hold": {
+        "breathe": 0.012,
+        "breatheDur": 2.2
+      },
+      "exit": {
+        "dur": 0.2,
+        "ease": "in",
+        "to": {
+          "opacity": 0,
+          "scale": 0.9
+        }
+      },
+      "per": "word",
+      "stagger": 0.085,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "word",
+        "fadeIn": 0,
+        "fadeOut": 90
+      }
+    },
+    "shift-key": {
+      "label": "시프트 키",
+      "note": "낱말이 오른쪽에서 기울어져 밀려 들어온다. 리듬이 빠른 편집에.",
+      "mode": "word",
+      "enter": {
+        "dur": 0.26,
+        "ease": "expoOut",
+        "from": {
+          "opacity": 0,
+          "dx": 0.6,
+          "rot": 6,
+          "scale": 1.04
+        }
+      },
+      "hold": {},
+      "exit": {
+        "dur": 0.16,
+        "ease": "in",
+        "to": {
+          "opacity": 0,
+          "dx": -0.25
+        }
+      },
+      "per": "word",
+      "stagger": 0.05,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "word",
+        "fadeIn": 0,
+        "fadeOut": 80
+      }
+    },
+    "word-highlight": {
+      "label": "낱말 강조",
+      "note": "지금 말하는 낱말만 강조색 + 1.10배. 발화 타이밍(words)이 있으면 그대로 따른다.",
+      "mode": "karaoke",
+      "enter": {
+        "dur": 0.12,
+        "ease": "outSoft",
+        "from": {
+          "opacity": 0,
+          "dy": 0.06
+        }
+      },
+      "hold": {},
+      "exit": {
+        "dur": 0.16,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "word",
+      "stagger": 0,
+      "style": {
+        "highlight": "scale",
+        "highlightScale": 1.1,
+        "unsungOpacity": 1.0
+      },
+      "ass": {
+        "mode": "karaoke",
+        "fadeIn": 80,
+        "fadeOut": 60
+      }
+    },
+    "karaoke-fill": {
+      "label": "색 채우기",
+      "note": "가사처럼 지나간 낱말이 강조색으로 채워지고, 아직 말하지 않은 낱말은 흐리다.",
+      "mode": "karaoke",
+      "enter": {
+        "dur": 0.12,
+        "ease": "outSoft",
+        "from": {
+          "opacity": 0,
+          "dy": 0.04
+        }
+      },
+      "hold": {},
+      "exit": {
+        "dur": 0.14,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "word",
+      "stagger": 0,
+      "style": {
+        "highlight": "fill",
+        "highlightScale": 1.0,
+        "unsungOpacity": 0.42
+      },
+      "ass": {
+        "mode": "karaoke",
+        "fadeIn": 80,
+        "fadeOut": 60
+      }
+    },
+    "typewriter": {
+      "label": "타자기",
+      "note": "한국어 기준 초당 14자로 찍히고, 끝나면 얇은 커서가 깜빡인다.",
+      "mode": "typewriter",
+      "enter": {
+        "dur": 0.06,
+        "ease": "linear",
+        "from": {
+          "opacity": 0
+        }
+      },
+      "hold": {
+        "cps": 14,
+        "cursor": "bar",
+        "cursorBlink": 2.2
+      },
+      "exit": {
+        "dur": 0.12,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "char",
+      "stagger": 0,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "typewriter",
+        "stepMs": 70,
+        "cursor": "|",
+        "fadeOut": 100
+      }
+    },
+    "count": {
+      "label": "숫자 카운트",
+      "note": "문장 안의 숫자를 0에서 목표값까지 0.8초에 올린다(%, 만, 원 등 단위 유지).",
+      "mode": "count",
+      "enter": {
+        "dur": 0.2,
+        "ease": "outSoft",
+        "from": {
+          "opacity": 0,
+          "dy": 0.12,
+          "scale": 0.94
+        }
+      },
+      "hold": {
+        "countDur": 0.8,
+        "countEase": "outSoft"
+      },
+      "exit": {
+        "dur": 0.16,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "count",
+        "stepMs": 60,
+        "fadeIn": 120,
+        "fadeOut": 90
+      }
+    },
+    "shake": {
+      "label": "셰이크",
+      "note": "등장할 때 0.35초 흔들리고 정착. 충격·반전 순간에 한 번만.",
+      "mode": "shake",
+      "enter": {
+        "dur": 0.1,
+        "ease": "outSoft",
+        "from": {
+          "opacity": 0,
+          "scale": 1.06
+        }
+      },
+      "hold": {
+        "shakeAmp": 0.055,
+        "shakeHz": 26,
+        "shakeDecay": 0.35
+      },
+      "exit": {
+        "dur": 0.14,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "shake",
+        "ampEm": 0.055,
+        "hz": 26,
+        "decay": 0.35,
+        "fadeOut": 80
+      }
+    },
+    "glitch": {
+      "label": "글리치",
+      "note": "RGB 3중 겹침 + 2프레임 단위 지터. 0.45초 버스트 뒤 정착.",
+      "mode": "glitch",
+      "enter": {
+        "dur": 0.05,
+        "ease": "linear",
+        "from": {
+          "opacity": 0
+        }
+      },
+      "hold": {
+        "glitchDur": 0.45,
+        "splitEm": 0.12,
+        "jitterEm": 0.05,
+        "holdBurst": 0.6,
+        "burstDur": 0.22,
+        "stepFrames": 2
+      },
+      "exit": {
+        "dur": 0.14,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "page",
+      "stagger": 0,
+      "style": {
+        "highlight": "none",
+        "glitchColors": [
+          "#FF2D55",
+          "#00E5A0",
+          "#4D7CFF"
+        ]
+      },
+      "ass": {
+        "mode": "glitch",
+        "splitEm": 0.12,
+        "jitterEm": 0.05,
+        "stepFrames": 2,
+        "fadeOut": 80
+      }
+    },
+    "char-jelly": {
+      "label": "젤리 글자",
+      "note": "글자마다 눌렸다 늘어나는 스프링. 짧은 감탄·강조에.",
+      "mode": "char",
+      "enter": {
+        "dur": 0.4,
+        "ease": "backOut",
+        "from": {
+          "opacity": 0,
+          "scale": 0.6,
+          "squash": 0.35
+        }
+      },
+      "hold": {
+        "breathe": 0.014,
+        "breatheDur": 2.0
+      },
+      "exit": {
+        "dur": 0.18,
+        "ease": "in",
+        "to": {
+          "opacity": 0
+        }
+      },
+      "per": "char",
+      "stagger": 0.03,
+      "style": {
+        "highlight": "none"
+      },
+      "ass": {
+        "mode": "word",
+        "fadeIn": 0,
+        "fadeOut": 90
+      }
+    }
+  },
+  "ass_style": {
+    "font": "Noto Sans CJK KR",
+    "fontFallback": [
+      "Noto Sans CJK KR",
+      "Noto Sans KR",
+      "Malgun Gothic",
+      "Apple SD Gothic Neo"
+    ],
+    "sizeEm": 1.0,
+    "bold": true,
+    "syntheticBold": true,
+    "maxCharsPerLine": 11,
+    "maxLines": 2,
+    "marginLr": 140,
+    "captionBottomY": 1240,
+    "lineGapEm": 1.26,
+    "libassScale": 1.0
+  }
+}

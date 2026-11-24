@@ -1,0 +1,1085 @@
+{
+  "schema": "shorts-pro/presets@1",
+  "version": "1.2.0",
+  "updated": "2026-11-24",
+  "locale": "ko-KR",
+  "notes": [
+    "이 파일은 shorts-pro 스킬의 단일 기준(single source of truth)이다. 스크립트와 문서가 모두 이 파일을 읽는다.",
+    "수정 후 반드시 `python3 -c \"import json;json.load(open('presets.json'))\"`로 검증한다.",
+    "색상은 #RRGGBB(문서/HTML용)와 &HAABBGGRR(ASS 자막용)을 함께 적었다. ASS는 BGR 순서다."
+  ],
+  "canvas": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "aspect": "9:16",
+    "duration_target_sec": [
+      15,
+      45
+    ],
+    "duration_max_sec": 59,
+    "video_codec": "libx264",
+    "pix_fmt": "yuv420p",
+    "profile": "high",
+    "color": {
+      "primaries": "bt709",
+      "trc": "bt709",
+      "colorspace": "bt709"
+    },
+    "audio": {
+      "codec": "aac",
+      "bitrate": "192k",
+      "sample_rate": 48000,
+      "channels": 2,
+      "loudness_lufs": -14
+    }
+  },
+  "safe_zones": {
+    "strict": {
+      "top_px": 288,
+      "bottom_px": 672,
+      "left_px": 96,
+      "right_px": 192,
+      "usable_box": {
+        "w": 792,
+        "h": 960
+      },
+      "centered_width_px": 696,
+      "source": "Meta Reels 광고 가이드(상단 14%, 하단 35%, 좌우 6%) + YouTube Shorts 우측 액션버튼 192px 중 가장 엄격한 값"
+    },
+    "caption_band": {
+      "y_top": 1200,
+      "y_bottom": 1450,
+      "note": "실전 하단 자막 위치. 설명·채널명 바(하단 672px)와 겹치지 않게 y<=1450을 넘기지 않는다."
+    },
+    "ui_hints": {
+      "right_action_buttons_px": 192,
+      "top_search_px": 288,
+      "bottom_caption_px": 672
+    }
+  },
+  "encode_presets": [
+    {
+      "id": "shorts-high",
+      "name": "쇼츠 고화질(업로드용)",
+      "vf_flags": [
+        "-preset",
+        "slow",
+        "-crf",
+        "18"
+      ],
+      "extra": [
+        "-profile:v",
+        "high",
+        "-level",
+        "4.2",
+        "-movflags",
+        "+faststart"
+      ],
+      "use": "최종 업로드"
+    },
+    {
+      "id": "shorts-draft",
+      "name": "쇼츠 초안(빠른 확인)",
+      "vf_flags": [
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23"
+      ],
+      "extra": [
+        "-movflags",
+        "+faststart"
+      ],
+      "use": "미리보기/검수"
+    },
+    {
+      "id": "intermediate",
+      "name": "중간 렌더(합성 전)",
+      "vf_flags": [
+        "-preset",
+        "veryfast",
+        "-crf",
+        "16"
+      ],
+      "extra": [],
+      "use": "오버레이 합성 전 컷 작업. 화질 손실 최소화"
+    }
+  ],
+  "color_presets": [
+    {
+      "id": "basic",
+      "name": "기본",
+      "eq": {
+        "brightness": 0.0,
+        "contrast": 1.0,
+        "saturation": 1.0
+      },
+      "colorbalance": null,
+      "extra": null
+    },
+    {
+      "id": "vivid",
+      "name": "선명하게",
+      "eq": {
+        "brightness": 0.03,
+        "contrast": 1.12,
+        "saturation": 1.18
+      },
+      "colorbalance": {
+        "rs": 0.0,
+        "gs": 0.0,
+        "bs": 0.0
+      },
+      "extra": "unsharp=5:5:0.6:5:5:0.0"
+    },
+    {
+      "id": "cinema",
+      "name": "시네마",
+      "eq": {
+        "brightness": -0.02,
+        "contrast": 1.18,
+        "saturation": 0.92
+      },
+      "colorbalance": {
+        "rs": 0.03,
+        "gs": 0.0,
+        "bs": -0.04
+      },
+      "extra": "curves=preset=medium_contrast"
+    },
+    {
+      "id": "cool",
+      "name": "쿨톤",
+      "eq": {
+        "brightness": 0.01,
+        "contrast": 1.06,
+        "saturation": 1.05
+      },
+      "colorbalance": {
+        "rs": -0.06,
+        "gs": 0.0,
+        "bs": 0.08
+      },
+      "extra": null
+    },
+    {
+      "id": "warm",
+      "name": "웜톤",
+      "eq": {
+        "brightness": 0.02,
+        "contrast": 1.05,
+        "saturation": 1.08
+      },
+      "colorbalance": {
+        "rs": 0.08,
+        "gs": 0.02,
+        "bs": -0.06
+      },
+      "extra": null
+    }
+  ],
+  "speed_presets": [
+    {
+      "id": "slow-mo",
+      "rate": 0.5,
+      "audio": "atempo=0.5",
+      "note": "안무 하이라이트. 오디오 피치 유지"
+    },
+    {
+      "id": "slow",
+      "rate": 0.75,
+      "audio": "atempo=0.75",
+      "note": "감정선 강조"
+    },
+    {
+      "id": "normal",
+      "rate": 1.0,
+      "audio": null,
+      "note": "원본"
+    },
+    {
+      "id": "fast",
+      "rate": 1.25,
+      "audio": "atempo=1.25",
+      "note": "정보형 호흡 압축"
+    },
+    {
+      "id": "faster",
+      "rate": 1.5,
+      "audio": "atempo=1.5",
+      "note": "아이돌 직캠·군무 강조"
+    },
+    {
+      "id": "double",
+      "rate": 2.0,
+      "audio": "atempo=2.0",
+      "note": "atempo 상한. 2배 초과는 atempo를 체인"
+    },
+    {
+      "id": "micro-098",
+      "rate": 0.98,
+      "audio": "atempo=0.98",
+      "note": "미세 슬로우. 10초가 10.2초로 늘어남. 호흡을 아주 조금 늘릴 때"
+    },
+    {
+      "id": "micro-101",
+      "rate": 1.01,
+      "audio": "atempo=1.01",
+      "note": "미세 배속(가장 약함). 10초가 9.90초"
+    },
+    {
+      "id": "micro-102",
+      "rate": 1.02,
+      "audio": "atempo=1.02",
+      "note": "미세 배속 기본값. 10초가 9.80초. 화면·소리 어색함이 가장 적다"
+    },
+    {
+      "id": "micro-103",
+      "rate": 1.03,
+      "audio": "atempo=1.03",
+      "note": "미세 배속. 10초가 9.71초"
+    },
+    {
+      "id": "micro-105",
+      "rate": 1.05,
+      "audio": "atempo=1.05",
+      "note": "미세 배속 상한. 20초가 19.05초. 1.05를 넘으면 표정이 빨라 보인다"
+    }
+  ],
+  "micro_variation_presets": [
+    {
+      "id": "micro-speed",
+      "name": "미세 배속만",
+      "level": 1,
+      "speed": 1.02,
+      "vf": "setpts=PTS/1.02,fps=30",
+      "af": "atempo=1.02",
+      "use": "원본 구도 그대로, 길이·호흡만 2% 바꿈"
+    },
+    {
+      "id": "micro-speed-eq",
+      "name": "미세 배속 + 미세 색보정",
+      "level": 2,
+      "speed": 1.02,
+      "eq": {
+        "brightness": 0.015,
+        "contrast": 1.03,
+        "saturation": 1.04,
+        "colorbalance": {
+          "rs": 0.02,
+          "bs": -0.02
+        }
+      },
+      "vf": "eq=brightness=0.015:contrast=1.03:saturation=1.04,colorbalance=rs=0.02:bs=-0.02,setpts=PTS/1.02,fps=30",
+      "af": "atempo=1.02",
+      "use": "눈에 띄지 않을 만큼만 색을 올림. 톤이 원본과 달라 보이면 수치를 반으로"
+    },
+    {
+      "id": "micro-variation",
+      "name": "미세 배속 + 미세 변형(크롭·반전)",
+      "level": 3,
+      "speed": 1.02,
+      "zoom": 1.03,
+      "hflip": "optional",
+      "vf": "hflip,eq=brightness=0.015:contrast=1.03:saturation=1.04,colorbalance=rs=0.02:bs=-0.02,scale=1080:1920:force_original_aspect_ratio=increase,scale=ceil(iw*1.03/2)*2:ceil(ih*1.03/2)*2,crop=1080:1920,setsar=1,setpts=PTS/1.02,fps=30",
+      "af": "atempo=1.02",
+      "use": "계정별로 다른 버전을 만들 때 쓰는 최대 조합. hflip을 켜면 화면 안 글자·로고도 뒤집히므로 자막은 반전 후에 얹는다",
+      "caution": "변형을 키우면 화질·자막 가독성이 같이 떨어진다. 1.03 크롭은 안전영역을 3% 잃는다."
+    }
+  ],
+  "auto_cut": {
+    "detect": "silencedetect=noise=-38dB:d=0.4",
+    "defaults": {
+      "noise_db": -38,
+      "min_silence_sec": 0.4,
+      "padding_sec": 0.05,
+      "min_keep_sec": 0.12
+    },
+    "methods": [
+      {
+        "id": "select",
+        "name": "한 번에 점프컷(프레임 드롭)",
+        "vf": "select='not(between(t,A,B)+between(t,C,D))',setpts=N/FRAME_RATE/TB",
+        "af": "aselect='not(between(t,A,B)+between(t,C,D))',asetpts=N/SR/TB",
+        "use": "빠름. 컷 경계가 1프레임(1/30초) 단위"
+      },
+      {
+        "id": "trim-concat",
+        "name": "남길 구간만 trim+concat",
+        "use": "정확함. 구간 수만큼 trim을 만들고 concat. 구간 사이 오디오가 정확히 붙는다"
+      }
+    ],
+    "caveat": "무음을 0.05초 정도 남기면 컷이 덜 딱딱하고 말 첫 자리가 잘리지 않는다. 반대로 완전히 붙이면 숨소리·박자가 사라져 부자연스러울 수 있다."
+  },
+  "audio_mix": {
+    "fades_sec": [
+      0,
+      0.3,
+      0.5,
+      1.0
+    ],
+    "fade_note": "소리와 화면을 같은 길이로. afade는 amix 뒤(최종 믹스)에 걸어야 BGM까지 같이 페이드된다.",
+    "sfx": [
+      {
+        "id": "pop",
+        "name": "팝",
+        "synth": "aevalsrc='0.6*sin(2*PI*(880-3600*t)*t)*exp(-28*t)':d=0.15:s=48000",
+        "when": "자막·카드 등장"
+      },
+      {
+        "id": "ding",
+        "name": "띠링",
+        "synth": "aevalsrc='0.45*(sin(2*PI*1318.5*t)+0.5*sin(2*PI*1975.5*t))*exp(-4.5*t)':d=0.8:s=48000",
+        "when": "결론·정답 공개"
+      },
+      {
+        "id": "whoosh",
+        "name": "스우시",
+        "synth": "anoisesrc=d=0.45:c=pink:a=0.5 + highpass=f=500 + afade(in 0.08 / out 0.3)",
+        "when": "장면 전환·점프컷"
+      },
+      {
+        "id": "shutter",
+        "name": "찰칵",
+        "synth": "anoisesrc=d=0.08:c=white:a=0.6 두 번(0ms / 75ms) + highpass=f=1800",
+        "when": "사진·비포애프터"
+      },
+      {
+        "id": "punch",
+        "name": "타격",
+        "synth": "aevalsrc='0.8*sin(2*PI*(150-400*t)*t)*exp(-16*t)':d=0.25:s=48000",
+        "when": "강조 컷"
+      }
+    ],
+    "mix": "[1:a]volume=0.9,adelay=2000|2000[fx];[0:a][fx]amix=inputs=2:duration=first:dropout_transition=0[a]",
+    "bgm_duck": "threshold=0.05:ratio=8:attack=20:release=350",
+    "bgm_volume": 0.3,
+    "loudness": "loudnorm=I=-14:TP=-1.5:LRA=11",
+    "asplit_note": "원음을 sidechaincompress와 amix 두 곳에 쓸 때는 asplit=2 로 나눈다. 같은 라벨을 두 번 쓰면 FFmpeg가 조용히 원본 입력을 물려 필터를 거치지 않은 소리가 섞인다."
+  },
+  "typography": {
+    "letter_spacing_px": {
+      "min": -4,
+      "max": 12,
+      "step": 1,
+      "default": 0
+    },
+    "line_height": {
+      "min": 1.0,
+      "max": 1.8,
+      "step": 0.05,
+      "default": 1.18
+    },
+    "line_height_by_layout": {
+      "subtitle": 1.18,
+      "title": 1.12,
+      "comment_body": 1.32
+    },
+    "fonts": {
+      "sans": {
+        "stack": "Noto Sans CJK KR, Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif",
+        "use": "기본"
+      },
+      "title": {
+        "stack": "Black Han Sans, Gmarket Sans, Noto Sans KR, sans-serif",
+        "use": "굵은 타이틀"
+      },
+      "round": {
+        "stack": "Cafe24 Ssurround, BMJUA, Nanum Pen Script, Noto Sans KR, sans-serif",
+        "use": "둥근 손글씨"
+      },
+      "serif": {
+        "stack": "Nanum Myeongjo, Noto Serif KR, Batang, serif",
+        "use": "명조·감성"
+      }
+    },
+    "ass": {
+      "letter_spacing": "Style의 Spacing 필드(프리셋 fsp + --letter-spacing)로 넣는다. 음수도 된다.",
+      "line_height": "ASS에는 행간 속성이 없어 줄마다 \\an5\\pos(540,y)로 직접 배치한다. gap = fontsize × line-height"
+    },
+    "html": "overlay.html은 CSS letter-spacing / line-height를 쓴다(SCRIPT.typography).",
+    "caution": "자간 +12px, 행간 1.8은 자막이 화면을 넘기 쉽다. 긴 문장은 12자/줄 규칙을 먼저 지킨다."
+  },
+  "crop_presets": [
+    {
+      "id": "center",
+      "name": "가운데",
+      "x": "(iw-1080)/2"
+    },
+    {
+      "id": "left",
+      "name": "왼쪽 1/3",
+      "x": "(iw-1080)*0.15"
+    },
+    {
+      "id": "right",
+      "name": "오른쪽 1/3",
+      "x": "(iw-1080)*0.85"
+    },
+    {
+      "id": "sub-left",
+      "name": "왼쪽 피사체",
+      "x": "(iw-1080)*0.25"
+    },
+    {
+      "id": "sub-right",
+      "name": "오른쪽 피사체",
+      "x": "(iw-1080)*0.75"
+    }
+  ],
+  "transitions": {
+    "types": [
+      "fade",
+      "dissolve",
+      "wipeleft",
+      "wiperight",
+      "slideleft",
+      "slideright",
+      "smoothleft",
+      "smoothright",
+      "circleopen",
+      "radial",
+      "pixelize",
+      "fadeblack"
+    ],
+    "default_duration_sec": 0.25,
+    "note": "숏츠는 0.15~0.3초. 비트 컷에는 전환 없이 하드컷(concat)을 쓴다."
+  },
+  "fonts": {
+    "default": "Noto Sans CJK KR",
+    "by_os": {
+      "windows": "Malgun Gothic",
+      "macos": "Apple SD Gothic Neo",
+      "linux": "Noto Sans CJK KR"
+    },
+    "pairings": [
+      {
+        "id": "impact-pretendard",
+        "title": "Black Han Sans",
+        "body": "Noto Sans KR",
+        "use": "아이돌·예능형. 제목은 굵게, 자막은 산세리프"
+      },
+      {
+        "id": "editorial",
+        "title": "Noto Serif KR",
+        "body": "Noto Sans KR",
+        "use": "정보·다큐형. 제목 세리프 + 본문 산세리프"
+      },
+      {
+        "id": "clean-mobile",
+        "title": "Pretendard ExtraBold",
+        "body": "Pretendard",
+        "use": "모바일 최소 크기 확보가 중요한 정보형"
+      }
+    ],
+    "free_sources": [
+      "Google Fonts(Korean)",
+      "눈누(noonnu.cc)",
+      "배달의민족·카페24·쿠키런 무료 폰트"
+    ],
+    "caution": "상업적 사용 가능 폰트만 쓴다. 폰트 라이선스는 영상 설명란·고정댓글에 표기하면 안전하다."
+  },
+  "layouts": {
+    "top_title": {
+      "name": "상단 고정 타이틀(배지 + 2색 제목)",
+      "area_px": {
+        "x": 60,
+        "y": 300,
+        "w": 960
+      },
+      "badge": {
+        "h": 64,
+        "radius": 32,
+        "pad_x": 26,
+        "font_px": 34,
+        "bg": "#2F6BFF",
+        "fg": "#FFFFFF"
+      },
+      "title": {
+        "font_px": 76,
+        "weight": 900,
+        "line_height": 1.12,
+        "color_a": "#FFFFFF",
+        "color_b": "#7C5CFF",
+        "outline_px": 0,
+        "shadow": "0 6px 24px rgba(0,0,0,.55)"
+      },
+      "rule": "첫 프레임부터 끝까지 고정. 핵심 단어만 색을 나눈다(2색까지)."
+    },
+    "comment_card": {
+      "name": "유튜브 댓글 카드",
+      "area_px": {
+        "x": 60,
+        "y": 520,
+        "w": 800
+      },
+      "card": {
+        "radius": 28,
+        "pad": 26,
+        "bg": "rgba(255,255,255,.96)",
+        "shadow": "0 12px 40px rgba(0,0,0,.35)"
+      },
+      "avatar": {
+        "size": 64,
+        "bg": "#E8E8EE"
+      },
+      "handle": {
+        "font_px": 30,
+        "color": "#606070",
+        "weight": 700
+      },
+      "body": {
+        "font_px": 38,
+        "color": "#111118",
+        "weight": 700
+      },
+      "accent": {
+        "color": "#6B4DE6",
+        "weight": 800
+      },
+      "likes": {
+        "font_px": 26,
+        "color": "#8A8A98"
+      },
+      "rule": "컷이 바뀔 때마다 카드 내용을 교체. 카드당 1.5~4초, 화면을 3분의 1 이상 가리지 않는다."
+    },
+    "corner_label": {
+      "name": "코너 출처 라벨 + 채널 워터마크",
+      "left": {
+        "x": 60,
+        "y": 210,
+        "h": 56,
+        "radius": 12,
+        "bg": "rgba(0,0,0,.72)",
+        "fg": "#FFFFFF",
+        "font_px": 30
+      },
+      "right": {
+        "x_right": 60,
+        "y": 210,
+        "fg": "rgba(255,255,255,.85)",
+        "font_px": 28
+      },
+      "rule": "왼쪽=방송/날짜, 오른쪽=채널명. 컷마다 왼쪽 라벨만 교체한다."
+    },
+    "bridge_subtitle": {
+      "name": "전환 브릿지 자막",
+      "area_px": {
+        "x": 90,
+        "y": 1200,
+        "w": 900,
+        "h": 250
+      },
+      "style": {
+        "font_px": 88,
+        "weight": 900,
+        "fill": "#FFFFFF",
+        "outline": "#101014",
+        "outline_px": 10,
+        "shadow": "0 8px 28px rgba(0,0,0,.6)",
+        "line_height": 1.16,
+        "max_chars": 12
+      },
+      "rule": "장면 전환 0.3~1.2초만 띄운다. 최대 2줄, 12자/줄."
+    },
+    "pinned_cta": {
+      "name": "하단 고정 CTA",
+      "area_px": {
+        "y": 1150
+      },
+      "style": {
+        "font_px": 44,
+        "weight": 800,
+        "fill": "#FFFFFF"
+      },
+      "rule": "마지막 2~3초에만. '저장', '팔로우', '댓글' 중 하나만."
+    }
+  },
+  "subtitle_motions": [
+    {
+      "id": "typewriter",
+      "name": "타자기",
+      "name_en": "typewriter",
+      "family": "reveal",
+      "duration_hint_ms": 900,
+      "when": "정보형 첫 문장, 리스트 도입부",
+      "ass": {
+        "mode": "typewriter",
+        "cursor": "|",
+        "step_ms": 45,
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,0)}"
+      },
+      "html": {
+        "anim": "typewriter",
+        "char_ms": 45,
+        "cursor": true
+      }
+    },
+    {
+      "id": "shift-key",
+      "name": "시프트 키",
+      "name_en": "shift-key",
+      "family": "word-pop",
+      "duration_hint_ms": 700,
+      "when": "낱말이 또각또각 올라오는 강조",
+      "ass": {
+        "mode": "per-word",
+        "stagger_ms": 90,
+        "wtag": "{\\fad(0,30)\\alpha&HFF&\\fscx86\\fscy86\\t({d0},{d1},\\alpha&H00&\\fscx100\\fscy100)}"
+      },
+      "html": {
+        "anim": "shift",
+        "stagger_ms": 90,
+        "from_px": 34
+      }
+    },
+    {
+      "id": "chip-wipe",
+      "name": "칩 와이프",
+      "name_en": "chip-wipe",
+      "family": "box-wipe",
+      "duration_hint_ms": 600,
+      "when": "예능·정보형 소제목, 배경 칩이 채워지며 등장",
+      "ass": {
+        "mode": "line",
+        "border_style": 3,
+        "outline_px": 16,
+        "shadow_px": 0,
+        "box_html": "#2F6BD9",
+        "box_ass": "&H00D96B2F",
+        "tags": "{\\an4\\pos({xLeft},{posY})\\fscx18\\t(0,180,\\fscx100)\\alpha&HFF&\\t(0,120,\\alpha&H00&)}"
+      },
+      "html": {
+        "anim": "chip",
+        "wipe_ms": 240,
+        "chip_color": "#2F6BFF",
+        "chip_pad": 18,
+        "radius": 14
+      }
+    },
+    {
+      "id": "pop-bounce",
+      "name": "팝/바운스",
+      "name_en": "pop-bounce",
+      "family": "scale",
+      "duration_hint_ms": 420,
+      "when": "훅·충격 문장. 가장 범용",
+      "ass": {
+        "mode": "line",
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,60)\\fscx62\\fscy62\\t(0,110,\\fscx112\\fscy112)\\t(110,230,\\fscx100\\fscy100)}"
+      },
+      "html": {
+        "anim": "pop",
+        "in_ms": 230,
+        "peak": 1.12
+      }
+    },
+    {
+      "id": "rise-lines",
+      "name": "줄마다 올라오기",
+      "name_en": "rise-lines",
+      "family": "line",
+      "duration_hint_ms": 800,
+      "when": "2줄 설명, 브릿지 자막",
+      "ass": {
+        "mode": "per-line",
+        "stagger_ms": 110,
+        "from_px": 46,
+        "tags": "{\\an5\\pos({posX},{lineY})\\fad(0,80)\\alpha&HFF&\\move({posX},{lineFrom},{posX},{lineY})\\t(0,150,\\alpha&H00&)}"
+      },
+      "html": {
+        "anim": "rise",
+        "stagger_ms": 110,
+        "from_px": 46
+      }
+    },
+    {
+      "id": "word-highlight",
+      "name": "낱말 강조",
+      "name_en": "word-highlight",
+      "family": "color",
+      "duration_hint_ms": 500,
+      "when": "핵심 명사·숫자만 색과 크기로 튀게",
+      "ass": {
+        "mode": "line-highlight",
+        "accent_html": "#F0A93C",
+        "accent_ass": "&H003CA9F0",
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(60,60)}",
+        "hl_tags": "{\\1c&H003CA9F0&\\fscx108\\fscy108\\t(0,180,\\fscx100\\fscy100)}",
+        "hl_reset": "{\\1c&H00FFFFFF&\\fscx100\\fscy100}"
+      },
+      "html": {
+        "anim": "highlight",
+        "accent": "#F0A93C",
+        "hl_ms": 180
+      }
+    },
+    {
+      "id": "emoji-attach",
+      "name": "이모지 부착",
+      "name_en": "emoji-attach",
+      "family": "decorate",
+      "duration_hint_ms": 500,
+      "when": "리액션·감정 강조(폰트 지원 확인 필요)",
+      "ass": {
+        "mode": "append-glyph",
+        "glyph": "🔥",
+        "glyph_delay_ms": 260,
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,80)}",
+        "glyph_tags": "{\\alpha&H00&\\fscx110\\fscy110}"
+      },
+      "html": {
+        "anim": "emoji",
+        "glyph": "🔥",
+        "delay_ms": 260,
+        "wobble": true
+      }
+    },
+    {
+      "id": "count-up",
+      "name": "숫자 카운트",
+      "name_en": "count-up",
+      "family": "number",
+      "duration_hint_ms": 900,
+      "when": "조회수·기간·금액 같은 수치",
+      "ass": {
+        "mode": "count",
+        "steps": 12,
+        "duration_ms": 700,
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,0)}",
+        "accent_ass_count": "&H003CA9F0"
+      },
+      "html": {
+        "anim": "count",
+        "steps": 12,
+        "duration_ms": 700,
+        "accent": "#F0A93C"
+      }
+    },
+    {
+      "id": "random-appear",
+      "name": "무작위 등장",
+      "name_en": "random-appear",
+      "family": "reveal",
+      "duration_hint_ms": 800,
+      "when": "의성어·짧은 감탄, 예능 자막",
+      "ass": {
+        "mode": "per-char-random",
+        "max_delay_ms": 320,
+        "seed": 7,
+        "tags": "{\\an5\\pos({posX},{posY})}{chars}"
+      },
+      "html": {
+        "anim": "random",
+        "max_delay_ms": 320,
+        "seed": 7
+      }
+    },
+    {
+      "id": "slide-in-top",
+      "name": "위에서 내려오기",
+      "name_en": "slide-in-top",
+      "family": "move",
+      "duration_hint_ms": 420,
+      "when": "컷 전환 직후 새 정보 던지기",
+      "ass": {
+        "mode": "line",
+        "tags": "{\\an5\\move({posX},-140,{posX},{posY},0,220)\\alpha&HFF&\\t(0,120,\\alpha&H00&)}"
+      },
+      "html": {
+        "anim": "slideTop",
+        "in_ms": 220
+      }
+    },
+    {
+      "id": "jelly",
+      "name": "젤리 글자",
+      "name_en": "jelly",
+      "family": "scale",
+      "duration_hint_ms": 600,
+      "when": "귀여운 예능 톤, 리액션",
+      "ass": {
+        "mode": "per-char",
+        "tags": "{\\an5\\pos({posX},{posY})}{chars}"
+      },
+      "html": {
+        "anim": "jelly",
+        "in_ms": 260
+      }
+    },
+    {
+      "id": "led-marquee",
+      "name": "LED 전광판",
+      "name_en": "led-marquee",
+      "family": "loop",
+      "duration_hint_ms": 800,
+      "when": "짧은 문구 반복 강조(2초 이상 노출 시)",
+      "ass": {
+        "mode": "line",
+        "fsp": 6,
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,0)\\fsp6\\1c&H00FFFFFF&\\t(0,300,\\1c&H0066D9FF&)\\t(300,600,\\1c&H00FFFFFF&)\\t(600,900,\\1c&H0066D9FF&)\\t(900,1200,\\1c&H00FFFFFF&)}"
+      },
+      "html": {
+        "anim": "led",
+        "flicker_ms": 300,
+        "accent": "#FFD966"
+      }
+    },
+    {
+      "id": "zoom-swap",
+      "name": "줌 아웃 교체",
+      "name_en": "zoom-swap",
+      "family": "scale",
+      "duration_hint_ms": 420,
+      "when": "한 줄을 다음 줄이 밀어내며 교체",
+      "ass": {
+        "mode": "line",
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,60)\\fscx165\\fscy165\\alpha&H88&\\t(0,240,\\fscx100\\fscy100\\alpha&H00&)}"
+      },
+      "html": {
+        "anim": "zoomSwap",
+        "in_ms": 240
+      }
+    },
+    {
+      "id": "color-fill",
+      "name": "색 입히기",
+      "name_en": "color-fill",
+      "family": "color",
+      "duration_hint_ms": 700,
+      "when": "결론 문장, 클릭 유도 한 줄",
+      "ass": {
+        "mode": "line",
+        "accent_html": "#F0A93C",
+        "accent_ass": "&H003CA9F0",
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,80)\\1c&H00FFFFFF&\\t(120,520,\\1c&H003CA9F0&)}"
+      },
+      "html": {
+        "anim": "colorFill",
+        "accent": "#F0A93C",
+        "in_ms": 400
+      }
+    },
+    {
+      "id": "outline-basic",
+      "name": "기본 외곽선",
+      "name_en": "outline-basic",
+      "family": "base",
+      "duration_hint_ms": 300,
+      "when": "모든 상황의 안전한 기본값",
+      "ass": {
+        "mode": "line",
+        "outline_px": 10,
+        "shadow_px": 3,
+        "tags": "{\\an5\\pos({posX},{posY})\\fad(0,0)}"
+      },
+      "html": {
+        "anim": "none"
+      }
+    }
+  ],
+  "ass_style": {
+    "font": "Noto Sans CJK KR",
+    "font_px": 92,
+    "bold": true,
+    "primary": "&H00FFFFFF",
+    "outline_color": "&H00101010",
+    "shadow_color": "&H80000000",
+    "outline_px": 8,
+    "shadow_px": 3,
+    "margin_v": 520,
+    "margin_lr": 120,
+    "max_chars_per_line": 12,
+    "max_lines": 2
+  },
+  "hooks": {
+    "rule": "1~3초 안에 (1) 숫자 (2) 반전 (3) 약속 중 하나. 12자 이내 한 줄 + 필요하면 2줄.",
+    "patterns": [
+      {
+        "id": "number",
+        "name": "숫자형",
+        "example": "3초 만에 끝났다",
+        "use": "정보·비교"
+      },
+      {
+        "id": "reversal",
+        "name": "반전형",
+        "example": "다들 반대로 알고 있다",
+        "use": "상식 뒤집기"
+      },
+      {
+        "id": "promise",
+        "name": "약속형",
+        "example": "이거 모르면 손해",
+        "use": "리스트·꿀팁"
+      },
+      {
+        "id": "question",
+        "name": "질문형",
+        "example": "왜 자꾸 끊길까?",
+        "use": "문제 제기"
+      },
+      {
+        "id": "fancam",
+        "name": "무대 직캠형",
+        "example": "카메라가 놓친",
+        "use": "아이돌·공연 컷"
+      }
+    ]
+  },
+  "seo": {
+    "title_max_chars": 40,
+    "title_rules": [
+      "검색어를 앞쪽에",
+      "숫자·괄호로 시선 잡기",
+      "감탄부호 1개까지",
+      "제목에 #Shorts 넣지 않는다(설명/태그로)"
+    ],
+    "tags_count": [
+      5,
+      15
+    ],
+    "hashtags": [
+      "#Shorts",
+      "#쇼츠"
+    ],
+    "description_template": "{한줄요약}\n\n{핵심 3줄}\n\n{출처/크레딧}\n\n#Shorts #{주제태그}",
+    "pinned_comment_template": "{영상에서 못다한 한 줄}\n{질문 하나} — 댓글로 알려주세요!",
+    "upload_time_kst": [
+      "18:00",
+      "23:00"
+    ]
+  },
+  "speed_ramp": {
+    "note": "한 클립 안에서 속도가 점진적으로 바뀐다. 소리가 있으면 구간 분할(구간마다 setpts + atempo, 마지막 concat)이 기본이고 영상만 있으면 setpts 표현식(ramp_timemap_expr)이 오차 없이 매끄럽다. references/ffmpeg-recipes.md 22번.",
+    "defaults": {
+      "base_speed": 1.0,
+      "strength": 0.5,
+      "segments": 8,
+      "min_base_speed": 0.5,
+      "max_base_speed": 2.0,
+      "strength_range": [
+        0.0,
+        0.85
+      ],
+      "span_range": [
+        0.2,
+        1.0
+      ]
+    },
+    "formula": "speed(u) = base_speed * (1 ± k ∓ 2k·u) / (1 ∓ k ± 2k·|2u-1|)  (k=strength, u=구간 진행도 0~1)",
+    "modes": [
+      {
+        "id": "up",
+        "name": "서서히 빠르게",
+        "expr": "1 - k + 2*k*u",
+        "snippet": "trim=start={a}:end={b},setpts=(PTS-STARTPTS)/{s},fps=30  +  atrim=start={a}:end={b},asetpts=PTS-STARTPTS,atempo={s}",
+        "use": "도입은 천천히, 후반 몰아치기"
+      },
+      {
+        "id": "down",
+        "name": "서서히 느리게",
+        "expr": "1 + k - 2*k*u",
+        "snippet": "trim=start={a}:end={b},setpts=(PTS-STARTPTS)/{s},fps=30  +  atrim=start={a}:end={b},asetpts=PTS-STARTPTS,atempo={s}",
+        "use": "엔딩 감속"
+      },
+      {
+        "id": "highlight",
+        "name": "하이라이트 감속",
+        "expr": "1 - k + 2*k*abs(2*u-1)",
+        "snippet": "trim=start={a}:end={b},setpts=(PTS-STARTPTS)/{s},fps=30  +  atrim=start={a}:end={b},asetpts=PTS-STARTPTS,atempo={s}",
+        "use": "빠르게 → 느리게 → 빠르게 (핵심 대사 강조)"
+      },
+      {
+        "id": "jump",
+        "name": "점프 가속",
+        "expr": "1 + k - 2*k*abs(2*u-1)",
+        "snippet": "trim=start={a}:end={b},setpts=(PTS-STARTPTS)/{s},fps=30  +  atrim=start={a}:end={b},asetpts=PTS-STARTPTS,atempo={s}",
+        "use": "느리게 → 빠르게 → 느리게 (중간 강조)"
+      }
+    ],
+    "ramp_timemap_expr": {
+      "note": "영상 전용(소리 없음). 속도 s(t)=s0*(1+a*t) 일 때 t_out = ln(1+a*t)/(s0*a). atempo는 시간에 따라 변하는 값을 못 받으므로 오디오에는 못 쓴다.",
+      "vf": "setpts=(1/({s0}*{a}))*log(1+{a}*T)/TB,fps=30",
+      "verified": "6초 0.5625x→1.4375x: 이론 6.434초 / 실제 6.43초"
+    },
+    "verified": {
+      "segment_split": "6초 8구간 0.5625x→1.4375x: 이론 6.525초 / 실제 6.61초(+1.3%, 프레임 경계 손실). 경계를 1/30초에 맞추면 0.1초 안쪽",
+      "pitch": "구간마다 오디오 피크 440.0Hz 유지(atempo)"
+    }
+  },
+  "pitch_presets": [
+    {
+      "id": "lock",
+      "name": "음정 유지",
+      "rate": "{r}",
+      "audio": "atempo={r}",
+      "note": "기본. 배속이 변해도 목소리 음정 그대로 (검증: 1.5배속 4.00초 · 피크 440.3Hz)"
+    },
+    {
+      "id": "linked",
+      "name": "속도 연동 변조(칩멍크/저음)",
+      "rate": "{r}",
+      "audio": "asetrate=48000*{r},aresample=48000",
+      "note": "빨라지면 음도 올라간다. 영상 setpts 배율과 반드시 동일하게 (검증: 1.5배속 · 660.3Hz)"
+    },
+    {
+      "id": "semitones",
+      "name": "반음 조절(길이 유지)",
+      "semitones": "n",
+      "ratio": "r = 2^(n/12)",
+      "audio": "asetrate=48000*{r},aresample=48000,atempo={1/r}",
+      "note": "-12~+12반음. r=0.5~2.0, 1/r=2.0~0.5 라 atempo 한 번에 된다. (검증: +2반음 6.00초 유지 · 494.2Hz, -3반음 370.4Hz)"
+    }
+  ],
+  "audio_cleanup": {
+    "note": "미리보기(웹앱 audio_fx)와 같은 순서. 목소리 필터 → 레벨링 → (asplit) 덕킹 → 믹스 → loudnorm → 리미터.",
+    "denoise": {
+      "presets": [
+        {
+          "id": "off",
+          "name": "끔",
+          "filter": "anull"
+        },
+        {
+          "id": "hum",
+          "name": "전원 험 60Hz",
+          "filter": "highpass=f=85,equalizer=f=60:width_type=q:w=6:g=-30",
+          "verified": "60Hz 0.1799 → 0.0006 (-49dB), 440Hz 그대로"
+        },
+        {
+          "id": "hum-noise",
+          "name": "험 + 히스",
+          "filter": "highpass=f=85,equalizer=f=60:width_type=q:w=6:g=-30,afftdn=nf=-25",
+          "verified": "60Hz 0.1799 → 0.00062, 히스(3.5k) 0.00009 → 0.00002, 440Hz 0.3498 → 0.3466"
+        },
+        {
+          "id": "hum-noise-sib",
+          "name": "험 + 히스 + 치찰음",
+          "filter": "highpass=f=85,equalizer=f=60:width_type=q:w=6:g=-30,afftdn=nf=-25,equalizer=f=7000:width_type=q:w=1:g=-4"
+        }
+      ],
+      "hum_hz": 60,
+      "hum_hz_note": "한국 60Hz. 일본·일부 지역은 50Hz로 바꾼다.",
+      "highpass_only_note": "highpass=f=85 만으로는 60Hz가 -7dB뿐(2차 필터). 전원 험은 노치가 확실하다."
+    },
+    "level": {
+      "filter": "acompressor=threshold=-30dB:ratio=8:attack=5:release=200:makeup=12,alimiter=limit=0.95",
+      "loudness": "loudnorm=I=-14:TP=-1.5:LRA=11",
+      "verified": "조용 0.0141 → 0.1205 / 큰 소리 0.3888 → 0.2837, 편차 27.5배 → 2.4배, loudnorm 뒤 -14.0 LUFS",
+      "caution": "loudnorm은 편차를 줄이지 않는다(27.5배 → 27.5배). dynaudnorm도 이 소스에서는 26.7배. 편차는 acompressor+makeup이 담당."
+    },
+    "duck": {
+      "filter": "sidechaincompress=threshold=0.05:ratio=8:attack=20:release=350",
+      "depth_map": [
+        0.25,
+        0.35
+      ],
+      "asplit": "목소리를 sidechain과 amix 두 곳에 쓰므로 asplit=2 필수",
+      "verified": "말하는 구간 BGM 1kHz 0.0106 → 0.0014 (-17.6dB), 목소리 440Hz 0.3234 → 0.3232(그대로)"
+    },
+    "integrated_chain": "[0:a]highpass=f=85,equalizer=f=60:width_type=q:w=6:g=-30,afftdn=nf=-25,acompressor=threshold=-30dB:ratio=8:attack=5:release=200:makeup=12,asplit=2[voice][sc];[1:a]volume=0.28,atrim=0:6[bgm];[bgm][sc]sidechaincompress=threshold=0.05:ratio=8:attack=20:release=350[duck];[voice][duck]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.95[out]",
+    "integrated_verified": "60Hz 0.1799 → 0.00059, 목소리 440Hz 0.3234 유지, BGM 1kHz -17.6dB 더킹, 통합 -13.5 LUFS"
+  }
+}
