@@ -16,6 +16,7 @@
       <div class="stage-bar">
         <span class="src-badge" id="srcInfo">샘플 데모 영상 · 0:15 · 1280×720</span>
         <div class="stage-tools">
+          <button class="mini-btn tpl-btn" id="btnTplTop" aria-label="템플릿 16종 열기" title="템플릿">🎨</button>
           <button class="mini-btn" id="btnDemo" aria-label="샘플 데모 불러오기" title="샘플 데모">🎬</button>
           <button class="mini-btn" id="btnHelp" aria-label="도움말">?</button>
         </div>
@@ -336,6 +337,18 @@
         <!-- ---------- 화면 ---------- -->
         <div class="panel" id="panel-frame">
           <div class="card">
+            <h2 class="card-title"><span class="dot"></span>템플릿<span class="tag" id="tplTag">화면 채우기</span></h2>
+            <p class="hint">탑티어 쇼츠 20건 분석에서 나온 배치·조판 16종입니다. 누르면 캔버스·영상 배치·제목·자막·댓글 카드가 한 번에 바뀌고, 글자 내용은 그대로 남아요.</p>
+            <div class="tpl-quick" id="tplQuick">
+              <button class="chip tpl-quick-chip" data-tpl="fill">화면 채우기</button>
+              <button class="chip tpl-quick-chip" data-tpl="yellow-box-vert">노랑 박스(세로)</button>
+              <button class="chip tpl-quick-chip" data-tpl="red-bar-vert">빨강 바(세로)</button>
+              <button class="chip tpl-quick-chip" data-tpl="lime-title">라임 제목</button>
+            </div>
+            <div class="btn-row"><button class="btn primary sm" id="btnTpl">🎨 템플릿 16종 열기</button></div>
+          </div>
+
+          <div class="card">
             <h2 class="card-title"><span class="dot"></span>반전 · 배경</h2>
             <div class="switch-row">
               <div><span class="label">좌우 반전 (미러링)</span><span class="sub">셀카가 거울처럼 보일 때 켜세요</span></div>
@@ -401,14 +414,16 @@
               </div>
             </div>
             <div class="row">
-              <div class="row-head"><label for="ls">자간</label><output id="outLs">0px</output></div>
+              <div class="row-head"><label for="ls">자간</label><output id="outLs">테마 따름</output></div>
               <input type="range" id="ls" min="-4" max="12" step="1" value="0" aria-label="자간">
             </div>
+            <div class="field check-line"><label class="chk"><input type="checkbox" id="lsAuto" checked aria-label="자간을 테마 값으로 따르기"> 자간은 테마 값 따름 (−0.012em)</label></div>
             <div class="row">
-              <div class="row-head"><label for="lh">행간</label><output id="outLh">1.45</output></div>
+              <div class="row-head"><label for="lh">행간</label><output id="outLh">테마 따름</output></div>
               <input type="range" id="lh" min="1" max="1.8" step="0.05" value="1.45" aria-label="행간">
             </div>
-            <p class="hint">제목·댓글 카드·자막에 함께 적용됩니다. 글꼴은 기기에 설치된 폰트 중 가장 가까운 것으로 표시돼요.</p>
+            <div class="field check-line"><label class="chk"><input type="checkbox" id="lhAuto" checked aria-label="행간을 테마 값으로 따르기"> 행간은 테마 값 따름 (1.26)</label></div>
+            <p class="hint">직접 조절하면 그 순간부터는 내 값을 씁니다. 제목·댓글 카드·자막에 함께 적용돼요.</p>
           </div>
 
           <details class="card" open>
@@ -612,6 +627,52 @@
   </nav>
 </div>
 
+<div class="modal tpl-modal" id="tplModal" hidden>
+  <div class="modal-box tpl-box">
+    <div class="tpl-head">
+      <h3>템플릿 16종 <span class="tag" id="tplCountTag">바로 적용</span></h3>
+      <button class="mini-btn" id="btnTplClose" aria-label="템플릿 닫기">✕</button>
+    </div>
+    <p class="hint" id="tplNow">지금 적용 · 화면 채우기</p>
+
+    <div class="tpl-grid" id="tplGrid" role="group" aria-label="템플릿 카드 16종"></div>
+    <div class="tpl-pending" id="tplPending"></div>
+
+    <details class="tpl-axes-box" id="tplAxes">
+      <summary>세부 조판만 바꾸기 — 캔버스 · 영상 배치 · 제목 · 자막 · 댓글</summary>
+      <div class="tpl-axes">
+      <div class="field"><label>캔버스</label>
+        <div class="seg tiny" id="segTplCanvas">
+          <button data-v="video">영상</button><button data-v="black">검정</button><button data-v="white">흰색</button>
+        </div>
+      </div>
+      <div class="field"><label>영상 배치</label>
+        <div class="seg tiny wrap" id="segTplStage">
+          <button data-v="cover">꽉 참</button><button data-v="band">16:9 밴드</button><button data-v="vband">세로 밴드</button><button data-v="square">정사각</button><button data-v="frame">액자</button>
+        </div>
+      </div>
+      <div class="field"><label>제목 조판</label>
+        <div class="seg tiny wrap" id="segTplTitle">
+          <button data-v="plain">밝은 글씨</button><button data-v="lime">라임</button><button data-v="outline">외곽선만</button><button data-v="box">노랑 박스</button><button data-v="bar">빨강 바</button><button data-v="stack">박스 2줄</button><button data-v="hand">손글씨</button>
+        </div>
+      </div>
+      <div class="field"><label>자막 모양</label>
+        <div class="seg tiny wrap" id="segTplSub">
+          <button data-v="outline">외곽선</button><button data-v="band">검정 띠</button><button data-v="bright">밝은 바탕</button><button data-v="box">색 박스</button><button data-v="lime">라임</button><button data-v="small">작은 회색</button><button data-v="tilt">기울임</button>
+        </div>
+      </div>
+      <div class="field"><label>댓글 카드</label>
+        <div class="seg tiny wrap" id="segTplComment">
+          <button data-v="white">흰 카드</button><button data-v="black">검정 카드</button><button data-v="compact">작은 카드</button><button data-v="none">없음</button>
+        </div>
+      </div>
+    </div>
+
+    </details>
+    <p class="hint">색·박스는 다시 입힐 수 있고, 글자 내용은 <b>텍스트</b> 탭에서 고칩니다. 좌우 10%·하단 25% 안전구역은 모든 템플릿이 지키도록 잡아 두었습니다.</p>
+  </div>
+</div>
+
 <div class="modal" id="helpModal" hidden>
   <div class="modal-box">
     <h3>캡컷처럼 쓰는 3분 사용법</h3>
@@ -622,6 +683,7 @@
       <li><b>편집</b> 탭에서 구간·속도·컷 분할을, <b>오디오</b>에서 소리·BGM·목소리 다듬기를 조정합니다.</li>
       <li>장면이 바뀌는 곳을 한 번에 나누려면 <b>⚡ 장면 전환 감지 → 바로 분할</b>을 누르세요. 마음에 안 들면 <b>분할 되돌리기</b>.</li>
       <li><b>텍스트</b> 탭에서 제목·댓글 카드·코너 라벨·자막을, <b>색감</b>·<b>화면</b>에서 필터와 프레임을 바꿉니다.</li>
+      <li>배치·조판을 통째로 바꾸고 싶으면 위쪽 <b>🎨</b> 또는 <b>화면</b> 탭의 <b>템플릿</b>을 누르세요. 16종 중 하나를 고르면 캔버스·영상 배치·제목·자막·댓글 카드가 한 번에 바뀌고 글자 내용은 남습니다.</li>
       <li><b>내보내기</b> 탭에서 화질을 고르고 저장하면 .webm 파일이 내려받아집니다. 파일은 서버로 가지 않습니다.</li>
     </ol>
     <button class="btn primary" id="btnCloseHelp" style="width:100%">알겠어요</button>

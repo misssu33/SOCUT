@@ -4,6 +4,7 @@
 `motion-library/motions.js`(한국어 자막 모션 라이브러리)를 그대로 인라인해
 index.html 하나로 완전 자체 포함(외부 요청 0건)을 유지한다.
 """
+import json
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -14,6 +15,13 @@ MOTION = next((c for c in _C if c.exists()), _C[0])
 css = (BUILD / "style.css").read_text(encoding="utf-8")
 body = (BUILD / "body.html").read_text(encoding="utf-8")
 js = (BUILD / "app.js").read_text(encoding="utf-8")
+
+# 1탄 템플릿 19종(구현 16 + 준비 중 3) — app.js 가 window.SOCUT_TEMPLATES 로 읽는다.
+TPL_PATH = BUILD / "templates.json"
+templates_obj = json.loads(TPL_PATH.read_text(encoding="utf-8"))
+templates = json.dumps(templates_obj, ensure_ascii=False, indent=2)
+if "</script" in templates.lower():
+    raise SystemExit("templates.json 안에 </script> 문자열이 있어 인라인할 수 없습니다.")
 
 if not MOTION.exists():
     raise SystemExit(f"자막 모션 라이브러리가 없습니다: {MOTION}")
@@ -42,6 +50,10 @@ html = f"""<!DOCTYPE html>
 {motions}
 </script>
 <script>
+/* ===== 1탄 템플릿 19종 (build/templates.json 인라인) ===== */
+window.SOCUT_TEMPLATES = {templates};
+</script>
+<script>
 {js}
 </script>
 </body>
@@ -51,4 +63,4 @@ html = f"""<!DOCTYPE html>
 out = ROOT / "index.html"
 out.write_text(html, encoding="utf-8")
 print("wrote", out, len(html), "chars",
-      f"(css {len(css):,} + body {len(body):,} + motions {len(motions):,} + app {len(js):,})")
+      f"(css {len(css):,} + body {len(body):,} + motions {len(motions):,} + templates {len(templates):,} + app {len(js):,})")
